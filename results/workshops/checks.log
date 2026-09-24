@@ -1,0 +1,146 @@
+REFERENCE SOLUTIONS (not learner completion)
+
+strided_softmax: <repo>/learning/workshops/solutions/strided_softmax.py
+  PASS 0x3 torch.float32
+  PASS 1x1 torch.float32
+  PASS 7x33 torch.float32
+  PASS 3x8192 torch.float32
+  PASS 0x3 torch.float16
+  PASS 1x1 torch.float16
+  PASS 7x33 torch.float16
+  PASS 3x8192 torch.float16
+  PASS 0x3 torch.bfloat16
+  PASS 1x1 torch.bfloat16
+  PASS 7x33 torch.bfloat16
+  PASS 3x8192 torch.bfloat16
+  PASS large constants and isolated maximum
+  PASS transpose physical addressing
+  PASS slice physical addressing
+  PASS broadcast physical addressing
+  PASS reject zero width
+  PASS reject bad warps
+  PASS reject oversized width
+  PASS non-default CUDA stream
+  PASS reject CPU tensors
+  PASS reject requires_grad tensors
+
+softmax_backward: <repo>/learning/workshops/solutions/softmax_backward.py
+  PASS 0x3 torch.float32
+  PASS 1x1 torch.float32
+  PASS 7x33 torch.float32
+  PASS 3x8192 torch.float32
+  PASS 0x3 torch.float16
+  PASS 1x1 torch.float16
+  PASS 7x33 torch.float16
+  PASS 3x8192 torch.float16
+  PASS 0x3 torch.bfloat16
+  PASS 1x1 torch.bfloat16
+  PASS 7x33 torch.bfloat16
+  PASS 3x8192 torch.bfloat16
+  PASS strided upstream gradient
+  PASS both operands strided and eight warps
+  PASS autograd, finite difference and row-sum invariant
+  PASS reject shape mismatch
+  PASS reject dtype mismatch
+  PASS non-default CUDA stream
+  PASS reject CPU tensors
+  PASS reject requires_grad tensors
+
+fused_gemm: <repo>/learning/workshops/solutions/fused_gemm.py
+  PASS M,N,K=(0, 7, 3) torch.float16
+  PASS M,N,K=(3, 0, 7) torch.float16
+  PASS M,N,K=(3, 5, 0) torch.float16
+  PASS M,N,K=(1, 1, 1) torch.float16
+  PASS M,N,K=(33, 65, 17) torch.float16
+  PASS M,N,K=(257, 65, 33) torch.float16
+  PASS M,N,K=(0, 7, 3) torch.bfloat16
+  PASS M,N,K=(3, 0, 7) torch.bfloat16
+  PASS M,N,K=(3, 5, 0) torch.bfloat16
+  PASS M,N,K=(1, 1, 1) torch.bfloat16
+  PASS M,N,K=(33, 65, 17) torch.bfloat16
+  PASS M,N,K=(257, 65, 33) torch.bfloat16
+  PASS group=1, BM=16, incomplete group
+  PASS group=1, BM=32, incomplete group
+  PASS group=1, BM=64, incomplete group
+  PASS group=4, BM=16, incomplete group
+  PASS group=4, BM=32, incomplete group
+  PASS group=4, BM=64, incomplete group
+  PASS group=8, BM=16, incomplete group
+  PASS group=8, BM=32, incomplete group
+  PASS group=8, BM=64, incomplete group
+  PASS reject FP32 GEMM
+  PASS reject bias length
+  PASS non-default CUDA stream
+  PASS reject CPU tensors
+  PASS reject requires_grad tensors
+
+online_normalizer: <repo>/learning/workshops/solutions/online_normalizer.py
+  PASS empty summary identity
+  PASS worked summary
+  PASS empty/empty avoids NaN
+  PASS left identity
+  PASS right identity
+  PASS rescale old sum
+  PASS partition invariance and overflow resistance
+  PASS merge tree and order invariance
+  PASS empty probabilities
+  PASS input unchanged
+  PASS invalid chunk size rejected
+
+split_softmax: <repo>/learning/workshops/solutions/split_softmax.py
+  PASS 0x3 torch.float32
+  PASS 1x1 torch.float32
+  PASS 3x1025 torch.float32
+  PASS 2x32769 torch.float32
+  PASS 1x131072 torch.float32
+  PASS 0x3 torch.float16
+  PASS 1x1 torch.float16
+  PASS 3x1025 torch.float16
+  PASS 2x32769 torch.float16
+  PASS 1x131072 torch.float16
+  PASS 0x3 torch.bfloat16
+  PASS 1x1 torch.bfloat16
+  PASS 3x1025 torch.bfloat16
+  PASS 2x32769 torch.bfloat16
+  PASS 1x131072 torch.bfloat16
+  PASS large constants and isolated maximum
+  PASS chunk=256 has partial tail
+  PASS chunk=4096 has partial tail
+  PASS reject bad chunk
+  PASS reject noncontiguous input
+  PASS reject oversized width
+  PASS non-default CUDA stream
+  PASS reject CPU tensors
+  PASS reject requires_grad tensors
+
+streaming_attention: <repo>/learning/workshops/solutions/streaming_attention.py
+  PASS N=0,D=16,causal=False,torch.float16
+  PASS N=1,D=32,causal=False,torch.float16
+  PASS N=17,D=16,causal=False,torch.float16
+  PASS N=65,D=32,causal=False,torch.float16
+  PASS N=129,D=64,causal=False,torch.float16
+  PASS N=0,D=16,causal=True,torch.float16
+  PASS N=1,D=32,causal=True,torch.float16
+  PASS N=17,D=16,causal=True,torch.float16
+  PASS N=65,D=32,causal=True,torch.float16
+  PASS N=129,D=64,causal=True,torch.float16
+  PASS N=0,D=16,causal=False,torch.bfloat16
+  PASS N=1,D=32,causal=False,torch.bfloat16
+  PASS N=17,D=16,causal=False,torch.bfloat16
+  PASS N=65,D=32,causal=False,torch.bfloat16
+  PASS N=129,D=64,causal=False,torch.bfloat16
+  PASS N=0,D=16,causal=True,torch.bfloat16
+  PASS N=1,D=32,causal=True,torch.bfloat16
+  PASS N=17,D=16,causal=True,torch.bfloat16
+  PASS N=65,D=32,causal=True,torch.bfloat16
+  PASS N=129,D=64,causal=True,torch.bfloat16
+  PASS N=2048 maximum supported sequence
+  PASS uniform causal = prefix average
+  PASS large logits, running maximum changes
+  PASS reject unsupported D
+  PASS reject unequal lengths
+  PASS non-default CUDA stream
+  PASS reject CPU tensors
+  PASS reject requires_grad tensors
+
+131 checks passed; 0 failed; 0 exercises incomplete; 0 unavailable.

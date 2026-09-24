@@ -1,0 +1,193 @@
+"""Assemble the Markdown guides into a MkDocs site (the GitHub Pages course site).
+
+Copies every guide into OUT/docs, renames the top-level README.md to index.md, and
+rewrites links that point outside the site (source files, JSON, folders) to GitHub
+URLs. Links between pages stay relative, so `mkdocs build --strict` can check them.
+The navigation is generated from the files that exist, so a copy without some
+guides still builds.
+
+    python scripts/build_site.py --out site_build
+    python -m mkdocs build --strict -f site_build/mkdocs.yml   # writes site_build/site
+"""
+
+import argparse
+import os
+import re
+import shutil
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_REPO = "https://github.com/buicongnguyen/triton-cuda-lab"
+SITE_NAME = "Triton + CUDA Kernel Lab"
+
+SECTIONS = [
+    (
+        "Beginner course",
+        [
+            "learning/README.md",
+            "learning/lessons/*.md",
+            "learning/GLOSSARY.md",
+            "learning/ANSWER_KEY.md",
+            "learning/SCHEDULE.md",
+            "learning/JOURNAL.md",
+        ],
+    ),
+    (
+        "Workshops",
+        [
+            "learning/workshops/README.md",
+            "learning/workshops/lessons/*.md",
+            "learning/workshops/EXPERIMENTS.md",
+            "learning/workshops/ANSWER_KEY.md",
+        ],
+    ),
+    (
+        "Guides",
+        [
+            "docs/SETUP.md",
+            "docs/LABS.md",
+            "docs/BENCHMARKING.md",
+            "docs/PROFILING.md",
+            "docs/CASE_STUDIES.md",
+            "docs/REFERENCES.md",
+            "references/books/README.md",
+        ],
+    ),
+    (
+        "Results",
+        [
+            "results/SUMMARY.md",
+            "results/VALIDATION.md",
+            "results/learning/VALIDATION.md",
+            "results/workshops/VALIDATION.md",
+        ],
+    ),
+    ("Project records", ["docs/records/*.md"]),
+]
+LINK = re.compile(r"(\]\()([^)\s]+)(\))")
+# Fenced code blocks, including ones indented inside list items.
+FENCED = re.compile(r"(^[ \t]*```.*?^[ \t]*```[^\n]*$)", re.M | re.S)
+
+CONFIG = """site_name: {site_name}
+site_url: {site_url}
+repo_url: {repo}
+edit_uri: ""
+docs_dir: docs
+theme:
+  name: material
+  features: [navigation.sections, navigation.top, navigation.footer, search.highlight,
+             content.code.copy]
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: {{icon: material/weather-night, name: Dark mode}}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: {{icon: material/weather-sunny, name: Light mode}}
+markdown_extensions:
+  - tables
+  - admonition
+  - attr_list
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+validation:
+  links:
+    anchors: warn
+nav:
+{nav}
+"""
+
+
+def pages():
+    """(section, [repo-relative paths]) in navigation order, for files that exist."""
+    seen, result = set(), []
+    for title, patterns in SECTIONS:
+        found = []
+        for pattern in patterns:
+            for path in sorted(ROOT.glob(pattern)):
+                rel = path.relative_to(ROOT).as_posix()
+                if rel not in seen:
+                    seen.add(rel)
+                    found.append(rel)
+        if found:
+            result.append((title, found))
+    return result
+
+
+def site_path(rel):
+    return "index.md" if rel == "README.md" else rel
+
+
+def title_of(path):
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# "):
+            return line[2:].strip().replace('"', "'")
+    return path.stem
+
+
+def rewrite_links(text, source_rel, site_pages, repo):
+    source_dir = (ROOT / source_rel).parent
+
+    def fix(match):
+        target = match.group(2)
+        if target.startswith(("http://", "https://", "mailto:", "#")):
+            return match.group(0)
+        path, sep, anchor = target.partition("#")
+        dest = (source_dir / path).resolve()
+        try:
+            dest_rel = dest.relative_to(ROOT).as_posix()
+        except ValueError:
+            return match.group(0)
+        if dest_rel in site_pages:
+            here = Path(site_path(source_rel)).parent
+            new = os.path.relpath(site_path(dest_rel), here).replace(os.sep, "/")
+            return f"{match.group(1)}{new}{sep}{anchor}{match.group(3)}"
+        kind = "tree" if dest.is_dir() else "blob"
+        return f"{match.group(1)}{repo}/{kind}/main/{dest_rel}{sep}{anchor}{match.group(3)}"
+
+    out = []
+    # Leave fenced code blocks and inline code untouched.
+    for i, block in enumerate(FENCED.split(text)):
+        if i % 2:
+            out.append(block)
+            continue
+        parts = re.split(r"(`[^`\n]*`)", block)
+        out.append("".join(p if p.startswith("`") else LINK.sub(fix, p) for p in parts))
+    return "".join(out)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, default=ROOT / "site_build")
+    parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub URL for non-page links")
+    args = parser.parse_args()
+    owner, name = args.repo.rstrip("/").split("/")[-2:]
+    site_url = f"https://{owner}.github.io/{name}/"
+    shutil.rmtree(args.out, ignore_errors=True)
+    docs = args.out / "docs"
+    sections = pages()
+    site_pages = {"README.md"} | {rel for _, rels in sections for rel in rels}
+    for rel in sorted(site_pages):
+        target = docs / site_path(rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        target.write_text(rewrite_links(text, rel, site_pages, args.repo), encoding="utf-8")
+    nav = ["  - Home: index.md"]
+    for title, rels in sections:
+        nav.append(f'  - "{title}":')
+        nav += [f'    - "{title_of(ROOT / rel)}": {site_path(rel)}' for rel in rels]
+    config = CONFIG.format(
+        site_name=SITE_NAME, site_url=site_url, repo=args.repo, nav="\n".join(nav)
+    )
+    (args.out / "mkdocs.yml").write_text(config, encoding="utf-8")
+    print(f"Wrote {len(site_pages)} pages to {docs}")
+
+
+if __name__ == "__main__":
+    main()

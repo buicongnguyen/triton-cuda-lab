@@ -1,0 +1,20 @@
+test_hints_never_load_student_code (test_checker.CheckerTests.test_hints_never_load_student_code) ... ok
+test_numeric_comparison_rejects_nan (test_checker.CheckerTests.test_numeric_comparison_rejects_nan) ... ok
+test_reference_cpu_solutions (test_checker.CheckerTests.test_reference_cpu_solutions) ... ok
+test_reference_files_are_separate (test_checker.CheckerTests.test_reference_files_are_separate) ... ok
+test_student_starters_are_reported_as_incomplete (test_checker.CheckerTests.test_student_starters_are_reported_as_incomplete) ... ok
+test_syntax_error_is_readable_failure (test_checker.CheckerTests.test_syntax_error_is_readable_failure) ... ok
+test_unavailable_gpu_is_not_a_pass (test_checker.CheckerTests.test_unavailable_gpu_is_not_a_pass) ... ok
+test_unfinished_function_does_not_hide_later_results (test_checker.CheckerTests.test_unfinished_function_does_not_hide_later_results) ... ok
+test_wrong_answer_fails (test_checker.CheckerTests.test_wrong_answer_fails) ... ok
+test_cpu_reference_and_level_selection (test_workshops.WorkshopRunnerTests.test_cpu_reference_and_level_selection) ... ok
+test_empty_selection_is_not_completion (test_workshops.WorkshopRunnerTests.test_empty_selection_is_not_completion) ... ok
+test_gpu_unavailable_is_not_completion (test_workshops.WorkshopRunnerTests.test_gpu_unavailable_is_not_completion) ... ok
+test_hint_does_not_load_gpu_or_exercise (test_workshops.WorkshopRunnerTests.test_hint_does_not_load_gpu_or_exercise) ... ok
+test_starter_and_wrong_answer_are_distinct (test_workshops.WorkshopRunnerTests.test_starter_and_wrong_answer_are_distinct) ... ok
+test_syntax_error_is_readable (test_workshops.WorkshopRunnerTests.test_syntax_error_is_readable) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.146s
+
+OK

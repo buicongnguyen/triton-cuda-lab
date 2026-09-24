@@ -1,0 +1,3 @@
+========= COMPUTE-SANITIZER
+CUDA correctness passed (3 vector + 12 softmax cases)
+========= ERROR SUMMARY: 0 errors

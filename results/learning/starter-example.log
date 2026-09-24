@@ -1,0 +1,11 @@
+YOUR EXERCISES
+
+offsets: <repo>\learning\exercises\offsets.py
+  TODO partial final block: Compute integer ceiling division
+  TODO exact multiple: Compute integer ceiling division
+  TODO empty vector: Compute integer ceiling division
+  TODO one element: Compute integer ceiling division
+  TODO first block: Construct every offset, then its validity mask
+  TODO tail mask: Construct every offset, then its validity mask
+
+0 checks passed; 0 failed; 1 exercises incomplete; 0 unavailable.

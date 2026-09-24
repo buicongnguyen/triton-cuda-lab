@@ -1,0 +1,35 @@
+{
+  "op": "softmax",
+  "shape": [
+    1024,
+    1024
+  ],
+  "dtype": "float16",
+  "stages": [
+    "ttir",
+    "ttgir",
+    "llir",
+    "ptx"
+  ],
+  "registers_per_thread": 23,
+  "spills": 0,
+  "shared_memory_bytes": 16,
+  "environment": {
+    "python": "3.12.13",
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "torch": "2.11.0+cu130",
+    "triton": "3.6.0",
+    "cuda_runtime": "13.0",
+    "cuda_available": true,
+    "nvidia_smi": "NVIDIA GeForce RTX 4080 SUPER, 595.97",
+    "gpu": "NVIDIA GeForce RTX 4080 SUPER",
+    "device_index": 0,
+    "compute_capability": [
+      8,
+      9
+    ],
+    "total_memory_bytes": 17170956288,
+    "l2_cache_bytes": 67108864,
+    "multiprocessor_count": 80
+  }
+}

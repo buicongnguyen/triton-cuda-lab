@@ -1,0 +1,31 @@
+{
+  "full_books_downloaded": false,
+  "downloads": [
+    {
+      "file": "downloads/gpu-programming-with-triton-chapter-1-preview.html",
+      "title": "GPU Programming with Triton",
+      "scope": "Short Chapter 1 excerpt and outline; not a full chapter or book",
+      "format": "text/html",
+      "source_url": "https://www.manning.com/preview/gpu-programming-with-triton/chapter-1",
+      "publisher_url": "https://www.manning.com/books/gpu-programming-with-triton",
+      "bytes": 49837,
+      "sha256": "64710f6776209c0a6796e31193a6396f80c90d804d6062d13f4ca05009d507a2",
+      "downloaded_on": "2026-09-23",
+      "original_bytes_preserved": true
+    },
+    {
+      "file": "downloads/ai-systems-performance-engineering-toc.pdf",
+      "title": "AI Systems Performance Engineering",
+      "scope": "Table of contents only; no chapter text",
+      "format": "application/pdf",
+      "pages": 14,
+      "source_url": "https://www.shroffpublishers.com/index.php?dispatch=attachments.getfile&attachment_id=3687",
+      "publisher_url": "https://www.shroffpublishers.com/books/9789368087298/",
+      "edition_isbn": "9789368087298",
+      "bytes": 222161,
+      "sha256": "72aa996ce52ddd5f83a4cfea7005ee38b32796146735e4a7140b295a390d2601",
+      "downloaded_on": "2026-09-23",
+      "original_bytes_preserved": true
+    }
+  ]
+}

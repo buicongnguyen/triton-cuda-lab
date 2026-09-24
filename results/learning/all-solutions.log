@@ -1,0 +1,97 @@
+REFERENCE SOLUTIONS (not learner completion)
+
+offsets: <repo>/learning/solutions/offsets.py
+  PASS partial final block
+  PASS exact multiple
+  PASS empty vector
+  PASS one element
+  PASS first block
+  PASS tail mask
+
+strides: <repo>/learning/solutions/strides.py
+  PASS row gap
+  PASS column stride and base
+  PASS cropped rows
+  PASS transpose
+  PASS offset slice
+
+reduction: <repo>/learning/solutions/reduction.py
+  PASS width three
+  PASS width five
+  PASS one value
+  PASS negative values
+  PASS input unchanged
+
+softmax: <repo>/learning/solutions/softmax.py
+  PASS worked row
+  PASS large positive logits
+  PASS large negative logits
+  PASS single element
+  PASS shift invariant
+  PASS normalized probabilities
+  PASS input unchanged
+
+rmsnorm: <repo>/learning/solutions/rmsnorm.py
+  PASS worked row
+  PASS zero residual sum
+  PASS constant row stays nonzero
+  PASS weight is per column
+  PASS input unchanged
+
+matmul: <repo>/learning/solutions/matmul.py
+  PASS rectangular product
+  PASS signed dot product
+  PASS identity
+  PASS ragged tiles
+  PASS empty tile dimension
+  PASS input unchanged
+
+measurement: <repo>/learning/solutions/measurement.py
+  PASS two times faster
+  PASS slower candidate
+  PASS milliseconds conversion
+  PASS vector traffic
+  PASS Amdahl limit
+  PASS unchanged program
+
+triton_add: <repo>/learning/solutions/triton_add.py
+  PASS N=0, torch.float32
+  PASS N=1, torch.float32
+  PASS N=257, torch.float32
+  PASS N=4097, torch.float32
+  PASS N=65537, torch.float32
+  PASS N=0, torch.float16
+  PASS N=1, torch.float16
+  PASS N=257, torch.float16
+  PASS N=4097, torch.float16
+  PASS N=65537, torch.float16
+
+triton_sum: <repo>/learning/solutions/triton_sum.py
+  PASS shape=(0, 3), torch.float32
+  PASS shape=(1, 1), torch.float32
+  PASS shape=(7, 33), torch.float32
+  PASS shape=(8, 1024), torch.float32
+  PASS shape=(3, 4097), torch.float32
+  PASS shape=(0, 3), torch.float16
+  PASS shape=(1, 1), torch.float16
+  PASS shape=(7, 33), torch.float16
+  PASS shape=(8, 1024), torch.float16
+  PASS shape=(3, 4097), torch.float16
+  PASS physical row stride differs from width
+  PASS large positive/negative constant rows
+
+triton_softmax: <repo>/learning/solutions/triton_softmax.py
+  PASS shape=(0, 3), torch.float32
+  PASS shape=(1, 1), torch.float32
+  PASS shape=(7, 33), torch.float32
+  PASS shape=(8, 1024), torch.float32
+  PASS shape=(3, 4097), torch.float32
+  PASS shape=(0, 3), torch.float16
+  PASS shape=(1, 1), torch.float16
+  PASS shape=(7, 33), torch.float16
+  PASS shape=(8, 1024), torch.float16
+  PASS shape=(3, 4097), torch.float16
+  PASS physical row stride differs from width
+  PASS large positive/negative constant rows
+
+74 checks passed; 0 failed; 0 exercises incomplete; 0 unavailable.

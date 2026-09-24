@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "triton-cuda-portfolio"
+version = "0.1.0"
+description = "A measured Triton and CUDA kernel lab"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = ["torch>=2.6"]
+
+[project.optional-dependencies]
+gpu = [
+    "triton>=3.2,<4; sys_platform == 'linux'",
+    # Community build for native Windows; upstream Triton publishes Linux wheels only.
+    "triton-windows>=3.2,<4; sys_platform == 'win32'",
+]
+# NumPy is for the Triton interpreter tests; Triton 3.6's interpreter fails on 2.4+.
+dev = ["ruff>=0.11", "numpy<2.4"]
+# The GitHub Pages course site: scripts/build_site.py, then mkdocs build.
+docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5,<10"]
+
+[project.scripts]
+kernel-bench = "kernel_portfolio.benchmark:main"
+kernel-doctor = "kernel_portfolio.environment:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+

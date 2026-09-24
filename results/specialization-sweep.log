@@ -1,0 +1,23 @@
+Median microseconds; registers per thread for softmax in brackets.
+shape        op                 pre-review             runtime             current
+1024x1024    softmax            2.76 [ 25]          2.76 [ 23]          2.75 [ 23]
+1024x1024    row_sum            1.74                1.88                1.76      
+1024x1024    rmsnorm            2.87                3.13                3.10      
+512x3072    softmax            3.45 [ 40]          3.65 [ 46]          3.41 [ 39]
+512x3072    row_sum            2.05                2.05                2.05      
+512x3072    rmsnorm            4.51                4.54                4.56      
+512x4097    softmax            5.66 [ 48]          8.47 [128]          5.60 [ 48]
+512x4097    row_sum            2.70                3.06                2.83      
+512x4097    rmsnorm            8.77               11.06                8.43      
+512x4104    softmax            4.39 [ 56]          7.92 [128]          4.71 [ 56]
+512x4104    row_sum            2.56                3.07                2.69      
+512x4104    rmsnorm            5.86               10.96                5.94      
+512x4112    softmax            4.40 [ 56]          6.20 [ 85]          4.39 [ 55]
+512x4112    row_sum            2.56                2.58                2.56      
+512x4112    rmsnorm            5.73                5.76                5.73      
+512x5120    softmax            5.01 [ 54]          6.55 [ 85]          5.05 [ 54]
+512x5120    row_sum            2.90                2.90                2.92      
+512x5120    rmsnorm            6.72                6.72                6.72      
+127x255x65   gemm                     2.32                2.56                2.49
+512x512x512  gemm                     5.96                6.59                5.99
+1024x1024x1024 gemm                    31.06               31.27               30.89

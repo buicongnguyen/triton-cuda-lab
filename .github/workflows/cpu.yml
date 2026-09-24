@@ -1,0 +1,45 @@
+name: CPU contracts, reference math and interpreted kernels
+on: [push, pull_request]
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported (pyproject requires-python) and the validated version.
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-tested.txt
+      - run: python -S -m unittest discover -s learning/tests -v
+      # requirements-tested.txt pins the validated versions for every install below.
+      - run: python -m pip install -c requirements-tested.txt torch --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pip install -c requirements-tested.txt -e '.[dev]'
+      - run: ruff check src tests scripts examples learning
+      - run: ruff format --check src tests scripts examples learning
+      # GPU tests skip without CUDA; interpreter tests skip without TRITON_INTERPRET.
+      - run: python -m unittest discover -s tests -v
+  triton-interpreter:
+    # Executes the Triton kernels on CPU. Checks indexing and math, not GPU timing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-tested.txt
+      - run: python -m pip install -c requirements-tested.txt torch --index-url https://download.pytorch.org/whl/cpu
+      # gpu supplies Triton 3.6.0 and dev supplies NumPy < 2.4 for the interpreter.
+      - run: python -m pip install -c requirements-tested.txt -e '.[gpu,dev]'
+      - run: python -m unittest discover -s tests -p 'test_interpreter.py' -v
+        env:
+          TRITON_INTERPRET: '1'

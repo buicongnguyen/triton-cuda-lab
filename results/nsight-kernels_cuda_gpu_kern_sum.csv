@@ -1,0 +1,4 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+98.7,1862462,6,310410.3,56352.5,1248,1009585,445371.5,"softmax_serial(const float *, float *, int, int)"
+1.1,21376,6,3562.7,1904.0,1504,9120,3111.5,"softmax_parallel(const float *, float *, int)"
+0.2,4000,3,1333.3,1248.0,1248,1504,147.8,"vector_add(const float *, const float *, float *, int)"

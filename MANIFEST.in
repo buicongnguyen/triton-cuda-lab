@@ -1,0 +1,10 @@
+include requirements-tested.txt
+recursive-include docs *.md
+recursive-include references/books *.md *.json
+prune references/books/downloads
+recursive-include cuda *.cu CMakeLists.txt
+recursive-include examples *.py
+recursive-include scripts *.py *.cmd *.ps1
+recursive-include learning *.py *.md
+recursive-include results *.json *.md *.log *.csv *.ptx *.ttir *.ttgir *.llir *.py
+prune results/local

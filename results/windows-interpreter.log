@@ -1,0 +1,8 @@
+test_add_tails (test_interpreter.InterpreterTests.test_add_tails) ... ok
+test_gemm_ragged_tiles (test_interpreter.InterpreterTests.test_gemm_ragged_tiles) ... ok
+test_row_kernels_with_row_gaps (test_interpreter.InterpreterTests.test_row_kernels_with_row_gaps) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.952s
+
+OK

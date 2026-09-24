@@ -1,0 +1,4 @@
+Tile {'BM': 128, 'BN': 128, 'BK': 32}, 8 warps, 3 stages; median microseconds and TFLOP/s
+1024^3  GROUP_M=1:      30.2 us   71.1 TF | GROUP_M=4:      30.4 us   70.6 TF | GROUP_M=8:      30.4 us   70.6 TF
+2048^3  GROUP_M=1:     217.2 us   79.1 TF | GROUP_M=4:     216.2 us   79.5 TF | GROUP_M=8:     215.5 us   79.7 TF
+4096^3  GROUP_M=1:    1281.2 us  107.3 TF | GROUP_M=4:    1288.7 us  106.6 TF | GROUP_M=8:    1329.9 us  103.3 TF

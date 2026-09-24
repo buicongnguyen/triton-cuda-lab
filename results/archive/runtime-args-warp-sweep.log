@@ -1,0 +1,21 @@
+Warp-count sweep of the intermediate all-runtime kernels (results/archive/runtime-args-triton_kernels.py),
+measured 2026-09-24 in WSL on the RTX 4080 SUPER. FP16, CUDA-graph replay of 30 calls, median of 9
+samples, warm L2, median microseconds. "old4w" is the pre-review kernel
+(results/archive/pre-review-triton_kernels.py) with 4 warps. More warps did not recover the
+all-runtime kernels' loss at widths that do not fill their power-of-two block.
+
+ 1024x1024  softmax  old4w    2.76 | 4w    2.76 | 8w    3.65 | 16w    6.31
+ 1024x1024  row_sum  old4w    1.88 | 4w    1.91 | 8w    2.49 | 16w    3.85
+ 1024x1024  rmsnorm  old4w    3.04 | 4w    3.13 | 8w    3.52 | 16w    4.68
+  512x2049  softmax  old4w    3.24 | 4w    4.16 | 8w    4.39 | 16w    5.59
+  512x2049  row_sum  old4w    1.84 | 4w    2.15 | 8w    2.42 | 16w    2.87
+  512x2049  rmsnorm  old4w    4.54 | 4w    9.56 | 8w    6.24 | 16w    7.27
+  512x4097  softmax  old4w    5.62 | 4w    8.33 | 8w    7.54 | 16w    8.39
+  512x4097  row_sum  old4w    2.72 | 4w    3.06 | 8w    3.28 | 16w    3.72
+  512x4097  rmsnorm  old4w    8.77 | 4w   10.95 | 8w   16.18 | 16w   11.61
+  256x8192  softmax  old4w    4.40 | 4w    5.05 | 8w    4.54 | 16w    4.53
+  256x8192  row_sum  old4w    2.51 | 4w    2.51 | 8w    2.42 | 16w    2.59
+  256x8192  rmsnorm  old4w    5.93 | 4w    5.73 | 8w    5.87 | 16w    6.31
+16384x4096  softmax  old4w  423.53 | 4w  423.55 | 8w  425.27 | 16w  440.18
+16384x4096  row_sum  old4w  193.53 | 4w  194.52 | 8w  193.81 | 16w  193.67
+16384x4096  rmsnorm  old4w  644.84 | 4w  630.13 | 8w  623.58 | 16w  610.41

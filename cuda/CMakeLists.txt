@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.24)
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 89)
+endif()
+project(cuda_portfolio LANGUAGES CXX CUDA)
+# Single-config generators otherwise build unoptimized host code.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CUDA_STANDARD 17)
+add_executable(cuda_portfolio kernels.cu)
+target_compile_options(cuda_portfolio PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>)
+enable_testing()
+add_test(NAME cuda_correctness COMMAND cuda_portfolio --test-only)
