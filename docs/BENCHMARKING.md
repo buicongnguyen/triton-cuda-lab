@@ -76,6 +76,15 @@ hashes identify the implementation even before a first commit exists. No speedup
 threshold is asserted; regressions are valid measurements. All displayed ratios
 use the PyTorch eager median for that same case and timing mode.
 
+Workshop reports with schema version 2 fingerprint the selected implementation
+and its shared dependencies. Reference runs exclude learner exercises; learner
+runs include the selected exercise files. Older reports retain their original
+hashes, while validation ignores files those runs did not execute. When only the
+reporting code changes, `source_snapshots` can point to a preserved copy of the
+original measured source: its hash must still match. This preserves old timings
+without claiming they were measured using the new reporting code. The maintained
+course manifest also excludes editable exercises and journals.
+
 `logical_gbps = minimum_logical_bytes / (median_ms * 1e6)` is an algorithmic
 effective bandwidth, **not measured DRAM throughput**. The same useful-work byte
 count is used for every variant, including compositions with extra intermediates.
@@ -94,4 +103,3 @@ For a defensible claim: repeat on the target hardware, keep an unfavorable shape
 compare against `torch.compile`, note errors/limits, and trace the full model before
 claiming end-to-end benefit. A 2x kernel speedup on 10% of runtime gives only
 `1 / (0.9 + 0.1/2) = 1.053x` overall before integration overhead.
-

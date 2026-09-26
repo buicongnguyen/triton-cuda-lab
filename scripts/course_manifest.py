@@ -1,8 +1,9 @@
 """Refresh results/learning/source-sha256.json, the identity of the beginner course files.
 
-Run after editing a lesson, exercise, solution or checker. tests/test_docs.py fails
+Run after editing a maintained lesson, solution or checker. tests/test_docs.py fails
 while the manifest and the files disagree. The file list itself stays as recorded;
-add a new course file to the JSON by hand. Hashes read CRLF as LF, like the
+add a new course file to the JSON by hand. Learner exercises and journals are excluded.
+Hashes read CRLF as LF, like the
 benchmark reports, so Windows and Linux checkouts agree.
 
     python scripts/course_manifest.py
@@ -10,9 +11,13 @@ benchmark reports, so Windows and Linux checkouts agree.
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from learning.provenance import learner_file  # noqa: E402
+
 MANIFEST = ROOT / "results/learning/source-sha256.json"
 
 
@@ -22,7 +27,11 @@ def file_sha256(path):
 
 
 def main():
-    names = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    names = {
+        name: digest
+        for name, digest in json.loads(MANIFEST.read_text(encoding="utf-8")).items()
+        if not learner_file(name)
+    }
     missing = [name for name in names if not (ROOT / name).exists()]
     if missing:
         raise SystemExit(f"Listed files no longer exist: {', '.join(missing)}")

@@ -258,7 +258,10 @@ Unsupported inputs raise `ValueError` or `TypeError` before anything launches;
 the message names the violated rule.
 
 Inside a compiled model, use the custom-op versions. They run the same kernels
-with the same checks, and `torch.compile` can capture them in one graph:
+with the same shape, dtype and device checks, and `torch.compile` can capture them
+in one graph. Their autograd error occurs on backward rather than at the call:
+the custom-op dispatcher disables grad recording inside the implementation.
+Use `torch.no_grad()` or `torch.inference_mode()` for inference:
 
 ```python
 import kernel_portfolio.library  # registers torch.ops.kernel_portfolio.*
@@ -267,6 +270,8 @@ def block(x, r, w):
     return torch.ops.kernel_portfolio.softmax(torch.ops.kernel_portfolio.residual_rmsnorm(x, r, w))
 
 fast_block = torch.compile(block, mode="reduce-overhead")  # replays as a CUDA graph
+with torch.no_grad():
+    y = fast_block(x, x, w)
 ```
 
 Use the plain `kernel_portfolio.*` functions for eager calls: going through
@@ -284,8 +289,10 @@ Use the plain `kernel_portfolio.*` functions for eager calls: going through
 | `matmul` | Contiguous 2D FP16/BF16, matching inner dimensions | Same dtype, FP32 accumulation; zero dimensions supported |
 
 All calls require NVIDIA CUDA, reject mixed dtypes/devices, and allocate fresh
-outputs. They reject `requires_grad` inputs only while autograd is enabled: model
-parameters are accepted under `torch.no_grad()` or `torch.inference_mode()`.
+outputs. The plain functions reject `requires_grad` inputs while autograd is enabled;
+custom ops accept them but raise if backward is attempted because no autograd formula
+is registered. Both interfaces accept model parameters under `torch.no_grad()` or
+`torch.inference_mode()`.
 Row width and GEMM N/K are compile-time constants: the first call with a new width
 or weight shape compiles, typically once per model. Vector lengths, row counts,
 row strides, GEMM M and `eps` are runtime arguments, so a new batch size reuses the

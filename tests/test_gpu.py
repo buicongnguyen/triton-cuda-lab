@@ -357,6 +357,7 @@ class BenchmarkSmokeTests(_GpuCase):
                 self.assertEqual("triton_8w" in case["variants"], not wide)
 
     def test_workshop_benchmark_cold_cache(self):
+        from learning.provenance import measured_workshop_hashes
         from learning.workshops import benchmark
 
         with tempfile.TemporaryDirectory() as directory:
@@ -369,6 +370,9 @@ class BenchmarkSmokeTests(_GpuCase):
             report = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(report["settings"]["cache"], "cold")
             self.assertEqual(len(report["cases"]), 2)
+            self.assertEqual(report["schema_version"], 2)
+            self.assertEqual(measured_workshop_hashes(report), report["source_sha256"])
+            self.assertFalse(any("/exercises/" in path for path in report["source_sha256"]))
 
 
 class CompileTests(_GpuCase):
@@ -397,6 +401,26 @@ class CompileTests(_GpuCase):
         ):
             with self.subTest(op=str(op)):
                 torch.library.opcheck(op, args, test_utils=("test_schema", "test_faketensor"))
+
+    def test_custom_ops_are_forward_only(self):
+        ns = torch.ops.kernel_portfolio
+        for op, args in (
+            (ns.softmax, (self.x,)),
+            (ns.row_sum, (self.x,)),
+            (ns.residual_rmsnorm, (self.x, self.r, self.w)),
+            (ns.matmul, (self.a, self.b)),
+            (ns.add, (self.x[0], self.r[0])),
+        ):
+            with self.subTest(op=str(op)):
+                inputs = tuple(x.detach().requires_grad_() for x in args)
+                with torch.enable_grad():
+                    out = op(*inputs)
+                    with self.assertRaisesRegex(RuntimeError, "no autograd formula"):
+                        out.sum().backward()
+                with torch.no_grad():
+                    inference = op(*inputs)
+                self.assertFalse(inference.requires_grad)
+                torch.testing.assert_close(inference, out.detach())
 
     @staticmethod
     def model(x, r, w, a, b):

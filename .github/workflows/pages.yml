@@ -27,7 +27,8 @@ jobs:
         with:
           path: site_build/site
   deploy:
-    if: github.event_name != 'pull_request'
+    # Only the public export publishes; the private source repo has no Pages site.
+    if: github.event_name != 'pull_request' && github.event.repository.private == false
     needs: build
     runs-on: ubuntu-latest
     # Only the job that publishes gets the Pages and OIDC token permissions.

@@ -21,7 +21,6 @@ from kernel_portfolio.benchmark import (
 )
 from kernel_portfolio.environment import describe
 from learning.check import load_exercise
-from learning.provenance import workshop_sources
 from learning.workshops.check import ROOT
 from learning.workshops.checks import WORKSHOPS
 from learning.workshops.gpu_checks import attention_oracle, tolerance
@@ -152,19 +151,19 @@ def main(argv=None):
     flush = l2_flush_buffer() if args.cache == "cold" else None
     calls_per_timer = 1 if flush is not None else args.iterations
     repo = ROOT.parents[1]
-    selected = SUITES if args.op == "all" else {args.op: SUITES[args.op]}
-    sources = workshop_sources(selected, solution=args.solution)
+    sources = list(ROOT.rglob("*.py")) + list((repo / "src/kernel_portfolio").glob("*.py"))
     report = {
-        "schema_version": 2,
+        "schema_version": 1,
         "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "environment": describe(),
         "git": revision(),
         "settings": {**vars(args), "output": str(args.output), "tf32": False},
         "implementation": "reference solutions" if args.solution else "learner exercises",
-        "source_sha256": {name: file_sha256(repo / name) for name in sources},
+        "source_sha256": {p.relative_to(repo).as_posix(): file_sha256(p) for p in sorted(sources)},
         "cases": [],
         "skipped": [],
     }
+    selected = SUITES if args.op == "all" else {args.op: SUITES[args.op]}
     with torch.inference_mode():
         for name, shapes in selected.items():
             assert WORKSHOPS[name][1] == "GPU"

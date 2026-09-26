@@ -19,7 +19,7 @@ This records execution of the separate reference solutions, not learner completi
 | Portfolio regressions | 35 of 36 passed; the two-GPU test skipped, and the interpreter-only class, skipped at setup, runs separately (4 passed) | [portfolio-regression.log](portfolio-regression.log) |
 | All benchmark variants | Correctness gate passed before timing | Errors and raw samples in the JSON below |
 | Static checks | Ruff passed across src, tests, scripts, examples and learning | Local Ruff execution |
-| Provenance | Benchmark source hashes match the current sources, checked by `tests/test_docs.py`; all measurements re-run on 2026-09-26 | `source_sha256` in the raw reports |
+| Provenance | Measured kernels match current sources; the original reporting code is preserved under `source_snapshots` and verified against its original hash. Unused learner exercises do not invalidate reference timings. Measurements remain from 2026-09-26. | `source_sha256` and `source_snapshots` in the raw reports |
 
 Checks cover ragged dimensions, empty outputs, all supported dtypes, selected
 strided/broadcast layouts, option variants, invalid metadata, input preservation,

@@ -10,6 +10,8 @@ import re
 import unittest
 from pathlib import Path
 
+from learning.provenance import learner_file, measured_workshop_hashes
+
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = (
     "docs/CASE_STUDIES.md",
@@ -63,9 +65,17 @@ class ResultProvenanceTests(unittest.TestCase):
         for path in sorted((ROOT / "results").rglob("*.json")):
             if {"local", "archive"} & set(path.relative_to(ROOT).parts):
                 continue
-            digests = json.loads(path.read_text(encoding="utf-8")).get("source_sha256")
+            report = json.loads(path.read_text(encoding="utf-8"))
+            digests = report.get("source_sha256")
+            if report.get("implementation") in ("reference solutions", "learner exercises"):
+                digests = measured_workshop_hashes(report)
             for name, digest in (digests or {}).items():
-                source = ROOT / name if "/" in name else ROOT / "src/kernel_portfolio" / name
+                snapshot = report.get("source_snapshots", {}).get(name)
+                source = (
+                    ROOT / (snapshot or name)
+                    if "/" in name
+                    else ROOT / "src/kernel_portfolio" / name
+                )
                 with self.subTest(result=path.name, source=name):
                     self.assertTrue(source.exists(), f"{name} no longer exists")
                     self.assertEqual(
@@ -78,6 +88,7 @@ class ResultProvenanceTests(unittest.TestCase):
         manifest = ROOT / "results/learning/source-sha256.json"
         for name, digest in json.loads(manifest.read_text(encoding="utf-8")).items():
             with self.subTest(source=name):
+                self.assertFalse(learner_file(name), "Learner work must remain editable")
                 self.assertEqual(
                     sha256(ROOT / name), digest, f"{name} changed: run scripts/course_manifest.py"
                 )

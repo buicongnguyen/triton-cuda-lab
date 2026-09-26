@@ -75,6 +75,8 @@ What each checker word means:
 
 The checker prints the file it loaded. `--solution` tests reference code and
 prints **REFERENCE SOLUTIONS (not learner completion)**. It never edits your files.
+Exercise files and your journal are excluded from the maintained course manifest;
+completing them does not require refreshing hashes or rerunning reference benchmarks.
 Exit codes are 0 for checks passed, 1 for a wrong answer or load error, 2 for an
 unfinished exercise, and 3 for unavailable GPU dependencies. A command-line usage
 error also returns 2. An unfinished starter is expected; it is not a broken repo.

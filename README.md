@@ -114,13 +114,15 @@ kernel-bench --op softmax --dtype float32 --compile --output results/local/softm
 In WSL, after the [WSL setup](docs/SETUP.md#one-time-setup-wsl), the same commands
 apply, with `source .venv/bin/activate` and `KERNEL_REQUIRE_GPU=1 python -m unittest ...`.
 
-The operators are **forward-only**. They reject gradient-tracking inputs while
+The operators are **forward-only**. The plain functions reject gradient-tracking inputs while
 autograd is enabled (parameters work under `torch.no_grad()`), mixed devices,
 unsupported layouts and out-of-range shapes. Row kernels support FP32/FP16/BF16
 and widths 1–1,048,576 (rows wider than 8192 loop over chunks); GEMM supports
 contiguous FP16/BF16 inputs with FP32 accumulation. For use inside `torch.compile`,
 `import kernel_portfolio.library` registers the same kernels as
 `torch.ops.kernel_portfolio.*` custom ops.
+The custom-op dispatcher can accept gradient-tracking inputs but raises on backward;
+use `torch.no_grad()` or `torch.inference_mode()` for model inference.
 Read the full [contracts](docs/SETUP.md#public-operator-contracts) before using them.
 
 ## Document map
