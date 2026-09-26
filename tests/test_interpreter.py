@@ -19,10 +19,14 @@ INTERPRETED = os.environ.get("TRITON_INTERPRET") == "1" and importlib.util.find_
 ROW_DTYPES = (torch.float32, torch.float16, torch.bfloat16)
 
 
-@unittest.skipUnless(INTERPRETED, "Set TRITON_INTERPRET=1 with Triton installed")
 class InterpreterTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if not INTERPRETED:
+            # CI sets KERNEL_REQUIRE_INTERPRETER=1 so a lost flag cannot pass as a skip.
+            if os.environ.get("KERNEL_REQUIRE_INTERPRETER") == "1":
+                raise RuntimeError("Interpreter tests required: set TRITON_INTERPRET=1")
+            raise unittest.SkipTest("Set TRITON_INTERPRET=1 with Triton installed")
         from kernel_portfolio import triton_kernels
 
         cls.kernels = triton_kernels
@@ -61,6 +65,20 @@ class InterpreterTests(unittest.TestCase):
                     torch.testing.assert_close(
                         out, (expected * w.double()).to(dtype), **tolerance("rmsnorm", dtype)
                     )
+
+    def test_masked_softmax(self):
+        # -inf entries, including a masked prefix longer than one looped chunk.
+        for width in (33, 8193):
+            with self.subTest(width=width):
+                x = torch.randn((2, width))
+                x[:, : width // 3] = float("-inf")
+                x[:, 1::5] = float("-inf")
+                out = torch.empty_like(x)
+                self.kernels.launch_softmax(x, out, 4)
+                self.assertTrue(torch.isfinite(out).all().item())
+                torch.testing.assert_close(
+                    out, x.double().softmax(-1).float(), **tolerance("softmax", torch.float32)
+                )
 
     def test_gemm_ragged_tiles(self):
         import triton

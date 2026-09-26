@@ -121,3 +121,32 @@ being claimed. Details and numbers are in the [case studies](../CASE_STUDIES.md)
 
 Also added: an MIT license, and `scripts/build_site.py` with a Pages workflow for
 the course site.
+
+## Fourth review, 2026-09-26
+
+An assistant review again, this time with two helper reviews (course code; scripts
+and CI) whose findings were confirmed by running them before anything was changed.
+Most findings share one pattern: a check that could not fail. Several were shown by
+deliberately breaking the code and watching the check still pass.
+
+| Priority | Finding | Fix and evidence |
+| --- | --- | --- |
+| High | Softmax on rows wider than 8192 returned NaN for every row containing `-inf` (masked attention scores). The looped kernel's online merge computed `exp(-inf - (-inf))`; the single-block kernel was correct, and every test used finite inputs | A lane that has seen only `-inf` shifts by 0. `test_masked_softmax` covers both kernels, both chunk sizes, three dtypes and fully masked rows (NaN, as in PyTorch); an interpreter test runs it in CI. The CUDA online kernel had the same gap and the same guard |
+| High | The CUDA test program ran three softmax kernels into one output buffer, so an online kernel that skipped its last `float4` still passed on the previous kernel's values | The buffer is filled with NaN before each kernel, and that broken kernel now fails. Failures name the kernel, row and column |
+| High | Two course checkers accepted broken kernels. The vector-add checker could not see stores past N; the fused-GEMM checker accepted an FP16 accumulator (tolerance 0.02, K at most 33) | A guard-buffer check, an exact FP16 case (2048 + 1 + 1 = 2050 only with one rounding) and a K = 1024 case. GPU tests assert that the checkers reject these broken kernels |
+| Medium | The validation record said benchmark source hashes match the sources, but nothing checked it. One workshop file had been hashed from a CRLF working copy, so no fresh clone could reproduce its hash | Hashes read CRLF as LF. `tests/test_docs.py` checks every saved result against the current sources, the course manifest against the course files, and archived results against archived kernels |
+| Medium | On a GPU shared with desktop applications, a burst of activity spoiled every sample of whichever case was being timed. Two consecutive full sweeps each had one section 2-3x slow for PyTorch and Triton alike (row sum 1024 x 1024 in one, RMSNorm 512 x 4097 in the other); re-running the same code gave the usual numbers | The benchmark prepares all cases, then visits each case three times in random order; a burst costs one visit (three of nine samples). The chunk sweep interleaves its variants too. A first version interleaved every sample of every case; that separated a case's variants in time and made tiny kernels pay to reload their CUDA graphs, so each case is now visited three times and its variants are timed back to back within a visit. The recorded results come from a sweep run after this change |
+| Medium | The case study credited a 1.11x CUDA online-softmax gain to `float4` loads, from one run that timed the kernels one after another | The CUDA program now samples all kernels in rotating order. Over three runs the online kernels were 1.00-1.12x faster than the three-pass kernel and `float4` stayed within 3% of scalar loads; the claim is withdrawn ([runs](../../results/cuda-softmax-runs.log)) |
+| Medium | The saved CUDA sanitizer logs predated the online kernel (12 softmax cases), although the docs cited them for it | Re-run on the current binary: 18 cases, 0 errors, 0 hazards |
+| Medium | The 2048-wide chunk path (two or more rows per SM) ran only in the sanitizer smoke script | GPU tests add 160-row looped cases for all three row kernels; the smoke script now covers every dtype |
+| Medium | CI's interpreter job would pass if its tests were skipped | `KERNEL_REQUIRE_INTERPRETER=1` turns that skip into a failure |
+| Medium | `setup_windows.ps1` kept a CPU-only PyTorch when re-run, printed "Done" without a usable GPU, and could not show its own "python was not found" message | It checks `torch.version.cuda` and reinstalls, ends with a GPU check, and looks for python before calling it |
+| Low | Pages workflow: deploy permissions on the build job, a new push could cancel a running deployment, and actions on the deprecated Node 20 | Permissions on the deploy job only, no cancellation, current action versions; pull requests build the site without deploying |
+| Low | Benchmarks listed 4-warp and 8-warp softmax for looped rows, where `num_warps` does not apply | One `triton` variant for rows wider than 8192 |
+| Low | `build_site.py --out` could delete a source folder; `report_results.py` depended on the working directory; the CUDA build script needed the repo root; the workshop benchmark lost all results on one unfinished exercise | Guards, repo-relative paths, a `CUDA_ARCH` override, and unfinished exercises recorded as skipped |
+| Low | Lesson text: the `<= N` bug example used N=256, which exposes nothing; a 2 MiB input was called 4 MB; the workshop README said graph timing includes allocation | Corrected. The FP32-conversion and non-default-stream notes now say what the checker can and cannot observe |
+
+Not fixed: `tests/test_docs.py` accepts any saved median, archived ones included,
+and checks only three-decimal microsecond figures. The non-default-stream check
+cannot prove which stream a kernel used, and an FP32 conversion before softmax
+arithmetic is not observable because Triton already promotes FP16 there.

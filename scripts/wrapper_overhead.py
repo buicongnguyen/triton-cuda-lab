@@ -25,6 +25,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--calls", type=int, default=20000)
     args = parser.parse_args()
+    if args.calls < 1:
+        parser.error("--calls must be at least 1")
     x = torch.randn((1024, 1024), device="cuda", dtype=torch.float16)
     out = torch.empty_like(x)
     parts = {

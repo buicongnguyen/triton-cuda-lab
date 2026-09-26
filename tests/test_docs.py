@@ -1,5 +1,10 @@
-"""Timings quoted in the docs must exist in the saved results they cite. Standard library only."""
+"""Docs and saved results must agree with the code. Standard library only.
 
+Quoted timings must exist in the saved results, and every saved result must have been
+measured on the current sources (or, in results/archive, on the archived kernel).
+"""
+
+import hashlib
 import json
 import re
 import unittest
@@ -44,6 +49,46 @@ class DocNumberTests(unittest.TestCase):
                         recorded,
                         f"{number} us in {doc} matches no saved median; update the doc",
                     )
+
+
+def sha256(path):
+    # Same rule as kernel_portfolio.benchmark.file_sha256: CRLF counts as LF.
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+class ResultProvenanceTests(unittest.TestCase):
+    def test_results_were_measured_on_current_sources(self):
+        # Portfolio reports key files by name; workshop reports by repo-relative path.
+        checked = 0
+        for path in sorted((ROOT / "results").rglob("*.json")):
+            if {"local", "archive"} & set(path.relative_to(ROOT).parts):
+                continue
+            digests = json.loads(path.read_text(encoding="utf-8")).get("source_sha256")
+            for name, digest in (digests or {}).items():
+                source = ROOT / name if "/" in name else ROOT / "src/kernel_portfolio" / name
+                with self.subTest(result=path.name, source=name):
+                    self.assertTrue(source.exists(), f"{name} no longer exists")
+                    self.assertEqual(
+                        sha256(source), digest, f"{name} changed after {path.name}: re-measure"
+                    )
+                    checked += 1
+        self.assertGreater(checked, 0, "no result carries source hashes")
+
+    def test_course_manifest_matches_course_files(self):
+        manifest = ROOT / "results/learning/source-sha256.json"
+        for name, digest in json.loads(manifest.read_text(encoding="utf-8")).items():
+            with self.subTest(source=name):
+                self.assertEqual(
+                    sha256(ROOT / name), digest, f"{name} changed: run scripts/course_manifest.py"
+                )
+
+    def test_archived_results_match_archived_kernels(self):
+        archive = ROOT / "results/archive"
+        kernels = {sha256(p) for p in archive.glob("*triton_kernels.py")}
+        for path in sorted(archive.glob("*.json")):
+            digests = json.loads(path.read_text(encoding="utf-8"))["source_sha256"]
+            with self.subTest(result=path.name):
+                self.assertIn(digests["triton_kernels.py"], kernels)
 
 
 if __name__ == "__main__":

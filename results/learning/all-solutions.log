@@ -65,6 +65,8 @@ triton_add: <repo>/learning/solutions/triton_add.py
   PASS N=257, torch.float16
   PASS N=4097, torch.float16
   PASS N=65537, torch.float16
+  PASS N=1: no store past the end
+  PASS N=257: no store past the end
 
 triton_sum: <repo>/learning/solutions/triton_sum.py
   PASS shape=(0, 3), torch.float32
@@ -94,4 +96,4 @@ triton_softmax: <repo>/learning/solutions/triton_softmax.py
   PASS physical row stride differs from width
   PASS large positive/negative constant rows
 
-74 checks passed; 0 failed; 0 exercises incomplete; 0 unavailable.
+76 checks passed; 0 failed; 0 exercises incomplete; 0 unavailable.

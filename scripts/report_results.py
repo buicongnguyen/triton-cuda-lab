@@ -4,13 +4,17 @@ import argparse
 import json
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", type=Path, nargs="*")
-    parser.add_argument("--output", type=Path, default=Path("results/SUMMARY.md"))
+    parser.add_argument("--output", type=Path, default=ROOT / "results/SUMMARY.md")
     args = parser.parse_args()
-    paths = args.inputs or sorted(Path("results").glob("*.json"))
+    paths = args.inputs or sorted((ROOT / "results").glob("*.json"))
+    if not paths:
+        parser.error("no result JSON found")
     lines = [
         "# Saved benchmark results",
         "",
@@ -23,6 +27,9 @@ def main():
     ]
     for path in paths:
         report = json.loads(path.read_text(encoding="utf-8"))
+        if "variants" not in report and "cases" not in report:
+            print(f"Skipping {path.name}: not a benchmark report")
+            continue
         lines.extend([f"## {path.name}", ""])
         if "cases" not in report:
             lines.extend(
@@ -57,7 +64,7 @@ def main():
                     )
         lines.append("")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    args.output.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"Saved {args.output}")
 
 

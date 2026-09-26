@@ -198,7 +198,9 @@ New-Item -ItemType Directory -Force results\local | Out-Null
 ```
 
 `--test-only` should print `CUDA correctness passed (3 vector + 18 softmax cases)`.
-The script targets `sm_89`, the RTX 4080 SUPER; adjust that flag on another GPU.
+The script builds into the repo's `build` folder from any directory. It targets
+`sm_89`, the RTX 4080 SUPER; on another GPU set the architecture first, for example
+`$env:CUDA_ARCH = "sm_86"` for an RTX 30-series card.
 
 Linux with an installed CUDA Toolkit:
 
@@ -277,7 +279,7 @@ Use the plain `kernel_portfolio.*` functions for eager calls: going through
 | --- | --- | --- |
 | `add` | Equal contiguous vectors, FP32/FP16/BF16 | Same shape/dtype; empty vector allowed |
 | `row_sum` | 2D, width 1–1,048,576, contiguous columns (any stride for width 1), nonoverlapping rows | One FP32 value per row; rows wider than 8192 loop over chunks |
-| `softmax` | Same row layout; finite values | Same shape/dtype, stable along last dimension |
+| `softmax` | Same row layout; finite values, or `-inf` for masked entries | Same shape/dtype, stable along last dimension; masked entries get 0, and a row with no finite value gives NaN as in PyTorch |
 | `residual_rmsnorm` | Same-shape row tensors and contiguous weight vector of matching dtype/device | FP32 residual addition/reduction, one rounding at output, positive finite epsilon |
 | `matmul` | Contiguous 2D FP16/BF16, matching inner dimensions | Same dtype, FP32 accumulation; zero dimensions supported |
 
@@ -292,8 +294,9 @@ real launches, so call `matmul` once for a new bucket before capturing it in a
 CUDA graph.
 
 No implicit input copies, broadcasting, backward, NaN/Inf policy, or production
-dispatcher is provided. Inputs must be finite; RMSNorm also assumes their FP32
-squared residuals and reduction remain finite. The wrappers do not scan tensors
+dispatcher is provided. Inputs must be finite, except that softmax accepts `-inf`
+for masked entries; RMSNorm also assumes its FP32 squared residuals and reduction
+remain finite. The wrappers do not scan tensors
 for finite values, since that would add launches. The row-width cap bounds
 resource usage and is not a hardware maximum. Physical tensor address spans and
 GEMM output sizes must fit signed 32-bit indexing. These are explicit

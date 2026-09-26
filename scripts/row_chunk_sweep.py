@@ -1,10 +1,14 @@
 """Evidence for triton_kernels._chunking: looped-row chunk width and warps vs row count.
 
 Forces each (chunk, warps) choice for rows wider than 8192, then runs the automatic
-choice. FP16, CUDA-graph replay of 20 calls, median of 7 samples, warm L2, microseconds.
+choice. FP16, CUDA-graph replay of 20 calls, warm L2, microseconds. Every variant of a
+shape is captured first, then all are replayed in a shuffled order in each of 9
+rounds, so a burst of activity from another GPU user lands on all of them alike;
+the table shows medians.
 """
 
 import argparse
+import random
 import statistics
 
 import torch
@@ -15,18 +19,30 @@ from kernel_portfolio.benchmark import prepare_timer, sample_ms
 
 CHOICES = ((2048, 4), (4096, 8), (8192, 8), (8192, 16))
 SHAPES = ((4, 32769), (64, 131072), (1024, 16384))
+ROUNDS = 9
 
 
-def time_us(fn):
+def capture(fn):
     fn()
-    run, count = prepare_timer(fn, "graph", 20)
-    return statistics.median(sample_ms(run, count) for _ in range(7)) * 1e3
+    return prepare_timer(fn, "graph", 20)
+
+
+def interleaved_us(timers, rng):
+    samples = {name: [] for name in timers}
+    for _ in range(ROUNDS):
+        names = list(timers)
+        rng.shuffle(names)
+        for name in names:
+            run, count = timers[name]
+            samples[name].append(sample_ms(run, count))
+    return {name: statistics.median(values) * 1e3 for name, values in samples.items()}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
     torch.manual_seed(2026)
+    rng = random.Random(2026)
     automatic = k._chunking
     sms = k._sm_count(torch.cuda.current_device())
     print(f"{sms} SMs; automatic rule: 2048/4w when rows >= {2 * sms}, else 8192/16w")
@@ -45,13 +61,19 @@ def main():
                 "rmsnorm": (None, lambda: ops.residual_rmsnorm(x, r, w)),
             }
             for op, (baseline, candidate) in runs.items():
-                cells = [f"{time_us(baseline):10.2f}" if baseline else f"{'-':>10}"]
+                # A captured graph keeps the chunking that was active when it was captured.
+                timers = {"torch": capture(baseline)} if baseline else {}
                 for choice in CHOICES:
                     k._chunking = lambda rows, device, choice=choice: choice
-                    cells.append(f"{time_us(candidate):12.2f}")
+                    timers[choice] = capture(candidate)
                 k._chunking = automatic
-                cells.append(f"{time_us(candidate):12.2f}")
+                timers["auto"] = capture(candidate)
+                us = interleaved_us(timers, rng)
+                cells = [f"{us['torch']:10.2f}" if baseline else f"{'-':>10}"]
+                cells += [f"{us[choice]:12.2f}" for choice in CHOICES]
+                cells.append(f"{us['auto']:12.2f}")
                 print(f"{rows}x{n:<8} {op:8} " + "".join(cells))
+                timers.clear()
     finally:
         k._chunking = automatic
 

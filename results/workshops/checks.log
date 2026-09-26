@@ -68,6 +68,8 @@ fused_gemm: <repo>/learning/workshops/solutions/fused_gemm.py
   PASS group=8, BM=16, incomplete group
   PASS group=8, BM=32, incomplete group
   PASS group=8, BM=64, incomplete group
+  PASS FP32 accumulation and one rounding (exact FP16 case)
+  PASS K=1024 with FP16 matmul tolerance
   PASS reject FP32 GEMM
   PASS reject bias length
   PASS non-default CUDA stream
@@ -143,4 +145,4 @@ streaming_attention: <repo>/learning/workshops/solutions/streaming_attention.py
   PASS reject CPU tensors
   PASS reject requires_grad tensors
 
-131 checks passed; 0 failed; 0 exercises incomplete; 0 unavailable.
+133 checks passed; 0 failed; 0 exercises incomplete; 0 unavailable.

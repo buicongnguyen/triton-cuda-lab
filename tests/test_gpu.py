@@ -34,6 +34,8 @@ class _GpuCase(unittest.TestCase):
             raise unittest.SkipTest("NVIDIA CUDA and Triton required")
         torch.manual_seed(2026)
         cls.dtypes = (torch.float32, torch.float16, torch.bfloat16)
+        # Looped row kernels switch to narrower chunks at two rows per SM; test both sides.
+        cls.many_rows = 2 * torch.cuda.get_device_properties(0).multi_processor_count
 
 
 class GpuTests(_GpuCase):
@@ -62,6 +64,7 @@ class GpuTests(_GpuCase):
                 (3, 8193),
                 (2, 32769),
                 (1, 131072),
+                (self.many_rows, 8195),
             ):
                 for padded in (False, True):
                     with self.subTest(dtype=dtype, shape=(rows, width), padded=padded):
@@ -114,6 +117,28 @@ class GpuTests(_GpuCase):
                 actual, torch.softmax(x.double(), -1).to(dtype), **tolerance("softmax", dtype)
             )
 
+    def test_masked_softmax(self):
+        """-inf scores (attention masks, padding) give probability 0 at every width."""
+        for dtype in self.dtypes:
+            for rows, width in ((3, 33), (3, 4097), (3, 8193), (self.many_rows, 8195), (2, 32769)):
+                with self.subTest(dtype=dtype, shape=(rows, width)):
+                    x = torch.randn((rows, width), device="cuda", dtype=dtype)
+                    # A masked prefix longer than one chunk, plus scattered masked entries.
+                    x[:, : width // 3] = float("-inf")
+                    x[:, 1::5] = float("-inf")
+                    actual = ops.softmax(x)
+                    self.assertTrue(torch.isfinite(actual).all().item())
+                    torch.testing.assert_close(
+                        actual,
+                        torch.softmax(x.double(), -1).to(dtype),
+                        **tolerance("softmax", dtype),
+                    )
+            for width in (33, 8193):
+                with self.subTest(dtype=dtype, fully_masked=width):
+                    # No finite score: NaN, exactly as torch.softmax.
+                    x = torch.full((2, width), float("-inf"), device="cuda", dtype=dtype)
+                    self.assertTrue(torch.isnan(ops.softmax(x)).all().item())
+
     def test_rmsnorm(self):
         for dtype in self.dtypes:
             for rows, width in (
@@ -125,6 +150,7 @@ class GpuTests(_GpuCase):
                 (2, 8192),
                 (3, 8193),
                 (2, 32769),
+                (self.many_rows, 8195),
             ):
                 with self.subTest(dtype=dtype, width=width):
                     x = torch.randn((rows, width + 3), device="cuda", dtype=dtype)[:, :width]
@@ -312,6 +338,24 @@ class BenchmarkSmokeTests(_GpuCase):
             variants = json.loads(path.read_text(encoding="utf-8"))["cases"][0]["variants"]
             self.assertIn("torch_compiled", variants)
 
+    def test_benchmark_interleaves_a_whole_suite(self):
+        """All cases are prepared, then sampled together: every case's inputs must stay
+        alive until its captured graphs have finished replaying."""
+        from kernel_portfolio import benchmark
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "softmax.json"
+            argv = ["--op", "softmax", "--samples", "3", "--iterations", "2", "--timing", TIMING]
+            with contextlib.redirect_stdout(io.StringIO()):
+                benchmark.main([*argv, "--output", str(path)])
+            cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
+            self.assertEqual([tuple(c["shape"]) for c in cases], benchmark.ROW_SHAPES)
+            for case in cases:
+                # Looped widths have one Triton variant; num_warps only applies up to 8192.
+                wide = case["shape"][1] > 8192
+                self.assertEqual("triton" in case["variants"], wide)
+                self.assertEqual("triton_8w" in case["variants"], not wide)
+
     def test_workshop_benchmark_cold_cache(self):
         from learning.workshops import benchmark
 
@@ -384,6 +428,66 @@ class CompileTests(_GpuCase):
             y, c = compiled(x, torch.zeros_like(x), self.w, a, self.b)
             torch.testing.assert_close(y, ops.softmax(ops.residual_rmsnorm(x, x * 0, self.w) * 2))
             torch.testing.assert_close(c, ops.matmul(a, self.b))
+
+
+class CheckerMutationTests(_GpuCase):
+    """The course checkers must reject known-broken kernels, not only accept correct ones.
+
+    Each mutation edits one line of a reference solution. Only the check aimed at that bug
+    runs, so the broken kernels never touch memory outside their own allocations.
+    """
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def failed_checks(self, relative, label, cases, mutation=None):
+        from learning.check import load_exercise
+
+        source = (self.ROOT / relative).read_text(encoding="utf-8")
+        if mutation:
+            old, new = mutation
+            self.assertEqual(source.count(old), 1, f"{relative} changed; update this mutation")
+            source = source.replace(old, new)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / Path(relative).name
+            path.write_text(source, encoding="utf-8")
+            module = load_exercise(path)
+            selected = [check for name, check in cases if label in name]
+            self.assertTrue(selected, f"no check labelled {label!r}")
+            failed = 0
+            for check in selected:
+                try:
+                    check(module)
+                except AssertionError:
+                    failed += 1
+            return failed, len(selected)
+
+    def test_add_checker_rejects_unmasked_store(self):
+        from learning.gpu_checks import gpu_cases
+
+        args = (
+            "learning/solutions/triton_add.py",
+            "no store past the end",
+            gpu_cases("triton_add"),
+        )
+        self.assertEqual(self.failed_checks(*args)[0], 0)
+        unmasked = ("tl.store(OUT + index, x + y, mask=valid)", "tl.store(OUT + index, x + y)")
+        failed, total = self.failed_checks(*args, mutation=unmasked)
+        self.assertEqual(failed, total)
+
+    def test_gemm_checker_rejects_early_rounding(self):
+        from learning.workshops.gpu_checks import gpu_cases
+
+        args = ("learning/workshops/solutions/fused_gemm.py", "exact FP16", gpu_cases("fused_gemm"))
+        self.assertEqual(self.failed_checks(*args)[0], 0)
+        for mutation in (
+            (
+                "acc = tl.dot(a, b, acc)",
+                "acc = tl.dot(a, b, acc).to(A.dtype.element_ty).to(tl.float32)",
+            ),
+            ("out = tl.maximum(acc + bias", "out = tl.maximum(acc.to(OUT.dtype.element_ty) + bias"),
+        ):
+            with self.subTest(mutation=mutation[1]):
+                self.assertEqual(self.failed_checks(*args, mutation=mutation)[0], 1)
 
 
 if __name__ == "__main__":

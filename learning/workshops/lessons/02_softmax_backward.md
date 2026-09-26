@@ -22,7 +22,9 @@ from softmax being unchanged by adding the same constant to every logit.
 ## Implement and validate
 
 1. Load y and g with their **own** row and column strides. Pad both with zero.
-2. Convert both to FP32 before multiplying; reduce their product once.
+2. Convert both to FP32 before multiplying; reduce their product once. (Triton
+   promotes FP16 reductions to FP32 on its own, so the checker cannot detect a
+   missing conversion; write it to make the precision explicit.)
 3. Store `y*(g-dot)` in a fresh contiguous output, with the original dtype.
 4. Require equal shape/dtype/device and reject differentiable inputs. This is an
    explicit VJP function, not a PyTorch `autograd.Function` or training integration.

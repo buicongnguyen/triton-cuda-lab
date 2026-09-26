@@ -88,7 +88,9 @@ sum of exponentials in a single pass, merging `(max, sum)` pairs across threads 
 warps with the rule from workshop A1. It reads each row twice instead of three
 times, and rows whose width is a multiple of four use 16-byte `float4` loads. Compare
 its `block_merge` with `block_reduce`: the structure is identical; only the combined
-value is a pair.
+value is a pair. Then read the guard in `add_value`: a thread whose values so far are
+all `-inf` (a masked score) must not compute `exp(-inf - (-inf))`, which is NaN. The
+test program's masked row fails without it.
 
 **Exit questions:** Why eight shared partials? Why are barriers needed even though
 each thread owns different output elements? Which memory accesses are contiguous?

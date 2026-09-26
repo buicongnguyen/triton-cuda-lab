@@ -144,6 +144,10 @@ def rewrite_links(text, source_rel, site_pages, repo):
             dest_rel = dest.relative_to(ROOT).as_posix()
         except ValueError:
             return match.group(0)
+        # A folder link whose README is a site page goes to that page.
+        readme = "README.md" if dest_rel == "." else f"{dest_rel}/README.md"
+        if dest.is_dir() and readme in site_pages:
+            dest_rel = readme
         if dest_rel in site_pages:
             here = Path(site_path(source_rel)).parent
             new = os.path.relpath(site_path(dest_rel), here).replace(os.sep, "/")
@@ -167,9 +171,16 @@ def main():
     parser.add_argument("--out", type=Path, default=ROOT / "site_build")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub URL for non-page links")
     args = parser.parse_args()
-    owner, name = args.repo.rstrip("/").split("/")[-2:]
+    args.repo = args.repo.rstrip("/").removesuffix(".git")
+    owner, name = args.repo.split("/")[-2:]
     site_url = f"https://{owner}.github.io/{name}/"
-    shutil.rmtree(args.out, ignore_errors=True)
+    out = args.out.resolve()
+    # Only ever delete a previous site build, never the repo or a folder of sources.
+    if out == ROOT or out in ROOT.parents or ROOT / "docs" == out:
+        parser.error("--out must be a separate build folder such as site_build")
+    if out.exists() and any(out.iterdir()) and not (out / "mkdocs.yml").exists():
+        parser.error(f"{out} is not empty and is not a previous site build")
+    shutil.rmtree(out, ignore_errors=True)
     docs = args.out / "docs"
     sections = pages()
     site_pages = {"README.md"} | {rel for _, rels in sections for rel in rels}

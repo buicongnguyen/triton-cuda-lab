@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -121,13 +122,17 @@ __device__ MaxSum merge(MaxSum a, MaxSum b) {
     return {m, a.sum * expf(a.max - m) + b.sum * expf(b.max - m)};
 }
 
+// Masked (-inf) inputs leave the state unchanged until a finite value arrives, so a
+// lane that starts inside a mask never computes (-inf) - (-inf).
 __device__ MaxSum add_value(MaxSum s, float value) {
     const float m = fmaxf(s.max, value);
+    if (m == -INFINITY) return s;
     return {m, s.sum * expf(s.max - m) + expf(value - m)};
 }
 
 __device__ MaxSum add_four(MaxSum s, float4 v) {
     const float m = fmaxf(s.max, fmaxf(fmaxf(v.x, v.y), fmaxf(v.z, v.w)));
+    if (m == -INFINITY) return s;
     return {m, s.sum * expf(s.max - m) + expf(v.x - m) + expf(v.y - m) + expf(v.z - m)
                    + expf(v.w - m)};
 }
@@ -213,7 +218,8 @@ void upload(Buffer& dst, const std::vector<float>& src) {
     CUDA_CHECK(cudaMemcpy(dst.ptr, src.data(), src.size() * sizeof(float), cudaMemcpyHostToDevice));
 }
 
-double verify_softmax(const std::vector<float>& input, const Buffer& output, int rows, int width) {
+double verify_softmax(const char* kernel, const std::vector<float>& input, const Buffer& output,
+                      int rows, int width) {
     std::vector<float> actual(input.size());
     CUDA_CHECK(cudaMemcpy(actual.data(), output.ptr, actual.size() * sizeof(float), cudaMemcpyDeviceToHost));
     double maximum_error = 0.0;
@@ -226,12 +232,13 @@ double verify_softmax(const std::vector<float>& input, const Buffer& output, int
             double value = actual[i * width + j];
             double error = std::abs(value - expected);
             if (!std::isfinite(value) || error > 2e-6 + 2e-5 * std::abs(expected))
-                throw std::runtime_error("Softmax correctness failed");
+                throw std::runtime_error(std::string(kernel) + " correctness failed: row " + std::to_string(i)
+                                         + ", column " + std::to_string(j) + ", width " + std::to_string(width));
             maximum_error = std::max(maximum_error, error);
             probability_sum += value;
         }
         if (std::abs(probability_sum - 1.0) > 2e-5)
-            throw std::runtime_error("Softmax row sum=" + std::to_string(probability_sum)
+            throw std::runtime_error(std::string(kernel) + " row sum=" + std::to_string(probability_sum)
                                      + " width=" + std::to_string(width));
     }
     return maximum_error;
@@ -253,41 +260,64 @@ void test_add(int n) {
             throw std::runtime_error("Vector add correctness failed");
 }
 
+// All-ones bytes are a NaN in every float, so an element a kernel fails to write
+// cannot pass verification using an earlier kernel's result.
+void poison(Buffer& buffer, size_t count) {
+    CUDA_CHECK(cudaMemset(buffer.ptr, 0xFF, count * sizeof(float)));
+}
+
 void test_softmax(int rows, int width, bool extreme) {
     auto values = random_values(rows * width);
     if (extreme) {
         for (int j = 0; j < width; ++j) values[j] = (j % 2 ? 9999.0f : 10000.0f);
         if (rows > 1) std::fill(values.begin() + width, values.begin() + 2 * width, -9000.0f);
+        // An attention-style mask: a masked prefix and scattered masked entries, never
+        // the whole row (a fully masked row has no defined softmax).
+        if (rows > 2)
+            for (int j = 0; j < width; ++j)
+                if (j < width / 3 || j % 5 == 1) values[2 * width + j] = -INFINITY;
     }
     Buffer x(values.size()), out(values.size());
     upload(x, values);
+    poison(out, values.size());
     softmax_serial<<<(rows + 255) / 256, 256>>>(x.ptr, out.ptr, rows, width);
     CUDA_CHECK(cudaGetLastError());
-    verify_softmax(values, out, rows, width);
+    verify_softmax("softmax_serial", values, out, rows, width);
+    poison(out, values.size());
     softmax_parallel<<<rows, kThreads>>>(x.ptr, out.ptr, width);
     CUDA_CHECK(cudaGetLastError());
-    verify_softmax(values, out, rows, width);
+    verify_softmax("softmax_parallel", values, out, rows, width);
+    poison(out, values.size());
     launch_softmax_online(x.ptr, out.ptr, rows, width);
     CUDA_CHECK(cudaGetLastError());
-    verify_softmax(values, out, rows, width);
+    verify_softmax("softmax_online", values, out, rows, width);
 }
 
-template<class Launch>
-std::vector<float> benchmark(Launch launch) {
-    for (int i = 0; i < 10; ++i) launch();
+constexpr int kSamples = 15, kLaunchesPerSample = 50;
+
+// Times all kernels together: each round takes one sample of every kernel, starting at
+// a different kernel each time. On a GPU shared with desktop applications, a burst of
+// other work then costs one sample of several kernels, which the median discards,
+// instead of every sample of one kernel.
+std::vector<std::vector<float>> benchmark(const std::vector<std::function<void()>>& launches) {
+    for (const auto& launch : launches)
+        for (int i = 0; i < 10; ++i) launch();
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
     Event start, end;
-    std::vector<float> samples;
-    for (int sample = 0; sample < 9; ++sample) {
-        CUDA_CHECK(cudaEventRecord(start.value));
-        for (int i = 0; i < 50; ++i) launch();
-        CUDA_CHECK(cudaEventRecord(end.value));
-        CUDA_CHECK(cudaEventSynchronize(end.value));
-        CUDA_CHECK(cudaGetLastError());
-        float elapsed;
-        CUDA_CHECK(cudaEventElapsedTime(&elapsed, start.value, end.value));
-        samples.push_back(elapsed / 50);
+    std::vector<std::vector<float>> samples(launches.size());
+    for (int sample = 0; sample < kSamples; ++sample) {
+        for (size_t k = 0; k < launches.size(); ++k) {
+            const size_t v = (k + sample) % launches.size();
+            CUDA_CHECK(cudaEventRecord(start.value));
+            for (int i = 0; i < kLaunchesPerSample; ++i) launches[v]();
+            CUDA_CHECK(cudaEventRecord(end.value));
+            CUDA_CHECK(cudaEventSynchronize(end.value));
+            CUDA_CHECK(cudaGetLastError());
+            float elapsed;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed, start.value, end.value));
+            samples[v].push_back(elapsed / kLaunchesPerSample);
+        }
     }
     return samples;
 }
@@ -318,11 +348,13 @@ int main(int argc, char** argv) {
         Buffer x(count), y(count), out(count);
         upload(x, values);
         upload(y, values);
-        auto add_times = benchmark([&] { vector_add<<<(count + 255) / 256, 256>>>(x.ptr, y.ptr, out.ptr, count); });
-        auto serial_times = benchmark([&] { softmax_serial<<<(rows + 255) / 256, 256>>>(x.ptr, out.ptr, rows, width); });
-        auto parallel_times = benchmark([&] { softmax_parallel<<<rows, kThreads>>>(x.ptr, out.ptr, width); });
-        auto online_times = benchmark([&] { launch_softmax_online(x.ptr, out.ptr, rows, width); });
-        auto online_scalar_times = benchmark([&] { launch_softmax_online(x.ptr, out.ptr, rows, width, false); });
+        const auto times = benchmark({
+            [&] { vector_add<<<(count + 255) / 256, 256>>>(x.ptr, y.ptr, out.ptr, count); },
+            [&] { softmax_serial<<<(rows + 255) / 256, 256>>>(x.ptr, out.ptr, rows, width); },
+            [&] { softmax_parallel<<<rows, kThreads>>>(x.ptr, out.ptr, width); },
+            [&] { launch_softmax_online(x.ptr, out.ptr, rows, width); },
+            [&] { launch_softmax_online(x.ptr, out.ptr, rows, width, false); },
+        });
         int driver, runtime;
         CUDA_CHECK(cudaDriverGetVersion(&driver));
         CUDA_CHECK(cudaRuntimeGetVersion(&runtime));
@@ -331,15 +363,15 @@ int main(int argc, char** argv) {
         std::ostream& stream = file_output ? file : std::cout;
         stream << std::setprecision(9) << "{\n  \"gpu\": \"" << props.name
                << "\",\n  \"driver\": " << driver << ",\n  \"runtime\": " << runtime
-               << ",\n  \"dtype\": \"float32\",\n  \"timing\": \"CUDA events; 50 launches/sample; 9 samples\","
+               << ",\n  \"dtype\": \"float32\",\n  \"timing\": \"CUDA events; 50 launches/sample; 15 samples, kernels interleaved\","
                << "\n  \"softmax_shape\": [1024, 1024],\n  \"add_elements\": 1048576,"
                << "\n  \"correctness\": \"passed CPU double softmax reference and exact float addition\","
                << "\n  \"variants\": {";
-        write_result(stream, "vector_add", add_times, false);
-        write_result(stream, "softmax_serial", serial_times, true);
-        write_result(stream, "softmax_parallel", parallel_times, true);
-        write_result(stream, "softmax_online", online_times, true);
-        write_result(stream, "softmax_online_scalar", online_scalar_times, true);
+        write_result(stream, "vector_add", times[0], false);
+        write_result(stream, "softmax_serial", times[1], true);
+        write_result(stream, "softmax_parallel", times[2], true);
+        write_result(stream, "softmax_online", times[3], true);
+        write_result(stream, "softmax_online_scalar", times[4], true);
         stream << "\n  }\n}\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << "\n";

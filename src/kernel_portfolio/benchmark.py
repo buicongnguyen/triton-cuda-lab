@@ -66,12 +66,21 @@ def make_case(op, shape, dtype):
             (x.numel() * itemsize + shape[0] * 4),
         )
     if op == "softmax":
+        from .triton_kernels import SINGLE_BLOCK_MAX
+
+        # num_warps only applies to single-block rows; looped rows pick their own warps.
+        if shape[1] <= SINGLE_BLOCK_MAX:
+            triton = {
+                "triton_4w": lambda: ops.softmax(x),
+                "triton_8w": lambda: ops.softmax(x, num_warps=8),
+            }
+        else:
+            triton = {"triton": lambda: ops.softmax(x)}
         return (
             {
                 "torch": lambda: torch.softmax(x, dim=-1),
                 "torch_decomposed": lambda: references.softmax_decomposed(x),
-                "triton_4w": lambda: ops.softmax(x),
-                "triton_8w": lambda: ops.softmax(x, num_warps=8),
+                **triton,
             },
             (torch.softmax(x.double(), dim=-1).to(dtype)),
             2 * x.numel() * itemsize,
@@ -201,10 +210,15 @@ def revision():
         return {"commit": None, "dirty": None}
 
 
+def file_sha256(path):
+    """SHA-256 with CRLF read as LF, so a Windows working copy and a Git checkout agree."""
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
 def source_hashes():
     """Content identity remains useful before a first Git commit exists."""
     root = Path(__file__).resolve().parent
-    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.glob("*.py"))}
+    return {p.name: file_sha256(p) for p in sorted(root.glob("*.py"))}
 
 
 def main(argv=None):
@@ -213,6 +227,12 @@ def main(argv=None):
     parser.add_argument("--dtype", choices=["float16", "bfloat16", "float32"], default="float16")
     parser.add_argument("--shape", type=int, nargs="+", help="Custom shape; GEMM order is M N K")
     parser.add_argument("--samples", type=int, default=9)
+    parser.add_argument(
+        "--visits",
+        type=int,
+        default=3,
+        help="Spread each case's samples over this many visits across the run",
+    )
     parser.add_argument("--iterations", type=int, default=30)
     parser.add_argument("--timing", choices=["graph", "events"], default="graph")
     parser.add_argument(
@@ -232,6 +252,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.samples < 3 or args.iterations < 1:
         parser.error("Use at least 3 samples and 1 iteration")
+    if args.visits < 1 or args.samples % args.visits:
+        parser.error("--samples must be a multiple of --visits")
     if args.shape and (args.op == "all" or any(d <= 0 for d in args.shape)):
         parser.error("A custom positive shape requires one --op")
     if args.shape and len(args.shape) != len(SUITES[args.op][0]):
@@ -259,29 +281,13 @@ def main(argv=None):
     }
     selected = SUITES if args.op == "all" else {args.op: SUITES[args.op]}
     with torch.inference_mode():
+        # Check and prepare every case first, then sample them all together (below).
+        prepared = []
         for op, shapes in selected.items():
             for shape in [tuple(args.shape)] if args.shape else shapes:
                 functions, expected, logical_bytes = make_case(op, shape, dtype)
                 if args.compile_torch:
                     functions["torch_compiled"] = torch.compile(functions["torch"], fullgraph=True)
-                times, timers, errors = {}, {}, {}
-                for name, fn in functions.items():
-                    result = fn()
-                    torch.testing.assert_close(result, expected, **tolerance(op, dtype))
-                    errors[name] = (result.float() - expected.float()).abs().max().item()
-                    timers[name] = prepare_timer(fn, args.timing, calls_per_timer)
-                    times[name] = []
-                for _ in range(args.samples):
-                    names = list(functions)
-                    rng.shuffle(names)
-                    for name in names:
-                        run, count = timers[name]
-                        times[name].append(
-                            sample_ms(run, count)
-                            if flush is None
-                            else sample_cold_ms(run, args.iterations, flush)
-                        )
-                baseline = statistics.median(times["torch"])
                 case = {
                     "op": op,
                     "shape": shape,
@@ -289,28 +295,65 @@ def main(argv=None):
                     "logical_bytes": logical_bytes,
                     "variants": {},
                 }
+                timers, errors = {}, {}
+                for name, fn in functions.items():
+                    result = fn()
+                    torch.testing.assert_close(result, expected, **tolerance(op, dtype))
+                    errors[name] = (result.float() - expected.float()).abs().max().item()
+                    timers[name] = prepare_timer(fn, args.timing, calls_per_timer)
                 if op == "matmul":
                     from .triton_kernels import _matmul_tuned
 
+                    # best_config belongs to the last tuned call: record it for this shape now.
                     case["autotune_config"] = str(_matmul_tuned.best_config)
-                for name, samples in times.items():
-                    stats = summarize(samples)
-                    ms = stats["median_ms"]
-                    stats.update(
-                        speedup_vs_torch=baseline / ms,
-                        max_abs_error=errors[name],
-                        logical_gbps=logical_bytes / (ms * 1e6),
-                    )
-                    if op == "matmul":
-                        m, n, k = shape
-                        stats["tflops"] = 2 * m * n * k / (ms * 1e9)
-                    case["variants"][name] = stats
-                    print(
-                        f"{op:8} {str(shape):23} {name:18} {ms * 1e3:9.3f} us {baseline / ms:6.2f}x"
-                    )
-                report["cases"].append(case)
-                # Release graph pools before the next shape.
-                timers.clear()
+                # A captured graph replays at its inputs' addresses, and only the functions
+                # own those inputs: keep them alive for as long as the graph can replay.
+                prepared.append(
+                    {"case": case, "functions": functions, "timers": timers, "errors": errors}
+                )
+
+        # Every case is visited --visits times, in a fresh random order each time. A visit
+        # times the case's variants back to back in shuffled rounds, so a ratio compares
+        # measurements taken moments apart. A burst of activity from another GPU user then
+        # spoils one visit of one case, which the median over all visits discards.
+        times = [{name: [] for name in p["timers"]} for p in prepared]
+        for _ in range(args.visits):
+            for i in rng.sample(range(len(prepared)), len(prepared)):
+                timers = prepared[i]["timers"]
+                # Untimed first: after other cases ran, a graph's first replay pays to reload
+                # it and warm the caches, which timing a case back to back never sees.
+                for run, _ in timers.values():
+                    run()
+                for _ in range(args.samples // args.visits):
+                    names = list(timers)
+                    rng.shuffle(names)
+                    for name in names:
+                        run, count = timers[name]
+                        times[i][name].append(
+                            sample_ms(run, count)
+                            if flush is None
+                            else sample_cold_ms(run, args.iterations, flush)
+                        )
+
+        for p, samples_by_name in zip(prepared, times):
+            case, errors = p["case"], p["errors"]
+            op, shape = case["op"], case["shape"]
+            baseline = statistics.median(samples_by_name["torch"])
+            for name, samples in samples_by_name.items():
+                stats = summarize(samples)
+                ms = stats["median_ms"]
+                stats.update(
+                    speedup_vs_torch=baseline / ms,
+                    max_abs_error=errors[name],
+                    logical_gbps=case["logical_bytes"] / (ms * 1e6),
+                )
+                if op == "matmul":
+                    m, n, k = shape
+                    stats["tflops"] = 2 * m * n * k / (ms * 1e9)
+                case["variants"][name] = stats
+                print(f"{op:8} {str(shape):23} {name:18} {ms * 1e3:9.3f} us {baseline / ms:6.2f}x")
+            report["cases"].append(case)
+        prepared.clear()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Saved {args.output}")

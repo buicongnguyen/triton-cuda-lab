@@ -40,15 +40,17 @@ For FP16 softmax with shape 1024x1024, the saved runs show:
 
 | Timing mode | PyTorch | Triton, 4 warps | baseline/candidate |
 | --- | ---: | ---: | ---: |
-| Graph replay, inputs warm in L2 | 4.164 us | 2.380 us | 1.75x |
-| Graph replay, L2 flushed before each call | 15.121 us | 9.762 us | 1.55x |
-| Ordinary event-timed wrapper | 10.704 us | 33.138 us | 0.32x |
+| Graph replay, inputs warm in L2 | 4.198 us | 2.389 us | 1.76x |
+| Graph replay, L2 flushed before each call | 12.186 us | 9.933 us | 1.23x |
+| Ordinary event-timed wrapper | 11.366 us | 33.835 us | 0.34x |
 
 These rows answer different questions. The kernel's captured device work can be
-fast while the validated Python wrapper is expensive for tiny calls. A 4 MB input
-fits in this GPU's 64 MiB L2, so the warm row measures cache-resident repeats; the
-flushed row reads from DRAM and shows a smaller advantage. The measurements
-do not justify calling every use of the custom operator faster. See the
+fast while the validated Python wrapper is expensive for tiny calls. The 2 MiB FP16
+input and 2 MiB output fit in this GPU's 64 MiB L2, so the warm row measures cache-resident repeats; the
+flushed row reads from DRAM and shows a smaller advantage. On this desktop GPU,
+shared with other applications, the flushed ratio for this shape ranged from 1.23x
+to 1.67x across runs, a reminder to repeat a measurement before trusting a digit.
+The measurements do not justify calling every use of the custom operator faster. See the
 [raw evidence and explanation](../../docs/CASE_STUDIES.md).
 
 ## Your first measured experiment

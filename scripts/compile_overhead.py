@@ -62,6 +62,8 @@ def main():
     parser.add_argument("--calls", type=int, default=1000)
     parser.add_argument("--rounds", type=int, default=7)
     args = parser.parse_args()
+    if args.calls < 1 or args.rounds < 1:
+        parser.error("--calls and --rounds must be at least 1")
     torch.manual_seed(2026)
     x = torch.randn((32, 127), device="cuda", dtype=torch.float16)
     r = torch.randn_like(x)

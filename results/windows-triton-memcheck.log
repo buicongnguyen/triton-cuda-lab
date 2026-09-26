@@ -1,9 +1,9 @@
 ========= COMPUTE-SANITIZER
 <repo>\.venv-win\Lib\site-packages\torch\jit\_script.py:359: DeprecationWarning: `torch.jit.script_method` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
   warnings.warn(
-......s..........
+.........s...........
 ----------------------------------------------------------------------
-Ran 17 tests in 56.432s
+Ran 21 tests in 71.964s
 
 OK (skipped=1)
 ========= ERROR SUMMARY: 0 errors

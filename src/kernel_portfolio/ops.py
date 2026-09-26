@@ -74,7 +74,12 @@ def _softmax_out(x: torch.Tensor, num_warps: int) -> torch.Tensor:
 
 
 def softmax(x: torch.Tensor, *, num_warps: int = 4) -> torch.Tensor:
-    """Stable row softmax for finite inputs; width 1..2**20; same dtype output."""
+    """Stable row softmax; width 1..2**20; same dtype output.
+
+    Scores are finite or -inf (masked entries get probability 0). A row with no
+    finite score returns NaN, as torch.softmax does. num_warps is an experimental knob
+    for rows up to 8192 wide; wider rows choose their own chunking and warps.
+    """
     out = _softmax_out(x, num_warps)
     if x.shape[0]:
         with _on(x.device):

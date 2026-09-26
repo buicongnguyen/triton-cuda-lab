@@ -27,6 +27,22 @@ def gpu_cases(name):
         for actual, expected in zip((x, y), saved):
             torch.testing.assert_close(actual, expected, atol=0, rtol=0)
 
+    def tail_guard_case(module, n, block=256):
+        # Launch the kernel into the front of a larger buffer. Tail lanes past N must not
+        # store, so the sentinel values after the output stay untouched. (A missing load
+        # mask reads past the inputs without changing any output; compute-sanitizer's
+        # memcheck reports it.)
+        import triton
+
+        torch.manual_seed(2026)
+        x = torch.randn(n, device="cuda")
+        y = torch.randn_like(x)
+        buffer = torch.full((n + block,), 7.0, device="cuda")
+        module.add_kernel[(triton.cdiv(n, block),)](x, y, buffer, n, block)
+        torch.testing.assert_close(buffer[:n], x + y, atol=0, rtol=0)
+        if not (buffer[n:] == 7.0).all():
+            raise AssertionError("Lanes past N wrote memory: store with mask=offsets < N")
+
     def row_case(module, rows, width, dtype, strided=False, extreme=False):
         torch.manual_seed(2026)
         x = torch.randn((rows, width + (5 if strided else 0)), device="cuda", dtype=dtype)[
@@ -55,6 +71,9 @@ def gpu_cases(name):
             (f"N={n}, {dtype}", lambda m, n=n, dtype=dtype: add_case(m, n, dtype))
             for dtype in (torch.float32, torch.float16)
             for n in (0, 1, 257, 4097, 65537)
+        ] + [
+            (f"N={n}: no store past the end", lambda m, n=n: tail_guard_case(m, n))
+            for n in (1, 257)
         ]
     if name not in ("triton_sum", "triton_softmax"):
         raise ValueError(name)

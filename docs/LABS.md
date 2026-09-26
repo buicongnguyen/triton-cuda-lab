@@ -76,7 +76,8 @@ shared array of eight partial values, and barriers. The final barrier protects
 scratch reuse between max and sum reductions. Serial summation uses compensation
 after an 8192-wide test exposed normalization drift. Explain how a tree reduction
 changes error accumulation. Exit criterion: defend one optimization using the
-JSON measurements, describe the finite-input limit, and explain why rows wider than
+JSON measurements, explain why a `-inf` (masked) score is safe in the single-block
+kernel but needed a guard in the looped one, and explain why rows wider than
 8192 switch to a looped kernel whose chunk size depends on the row count.
 
 ## 4. Residual RMSNorm: fuse without changing the contract

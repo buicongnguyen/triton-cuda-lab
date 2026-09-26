@@ -10,10 +10,17 @@ test_rows_contract (test_cpu.CpuTests.test_rows_contract) ... ok
 test_stable_softmax (test_cpu.CpuTests.test_stable_softmax) ... ok
 test_timing_summary (test_cpu.CpuTests.test_timing_summary) ... ok
 test_quoted_timings_exist_in_results (test_docs.DocNumberTests.test_quoted_timings_exist_in_results) ... ok
+test_archived_results_match_archived_kernels (test_docs.ResultProvenanceTests.test_archived_results_match_archived_kernels) ... ok
+test_course_manifest_matches_course_files (test_docs.ResultProvenanceTests.test_course_manifest_matches_course_files) ... ok
+test_results_were_measured_on_current_sources (test_docs.ResultProvenanceTests.test_results_were_measured_on_current_sources) ... ok
 test_benchmark_cli_modes (test_gpu.BenchmarkSmokeTests.test_benchmark_cli_modes) ... <venv>/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
   warnings.warn(
 ok
+test_benchmark_interleaves_a_whole_suite (test_gpu.BenchmarkSmokeTests.test_benchmark_interleaves_a_whole_suite)
+All cases are prepared, then sampled together: every case's inputs must stay ... ok
 test_workshop_benchmark_cold_cache (test_gpu.BenchmarkSmokeTests.test_workshop_benchmark_cold_cache) ... ok
+test_add_checker_rejects_unmasked_store (test_gpu.CheckerMutationTests.test_add_checker_rejects_unmasked_store) ... ok
+test_gemm_checker_rejects_early_rounding (test_gpu.CheckerMutationTests.test_gemm_checker_rejects_early_rounding) ... ok
 test_compiled_graph_matches_eager (test_gpu.CompileTests.test_compiled_graph_matches_eager) ... ok
 test_custom_op_registration (test_gpu.CompileTests.test_custom_op_registration) ... ok
 test_dynamic_row_count (test_gpu.CompileTests.test_dynamic_row_count) ... ok
@@ -25,16 +32,16 @@ test_extreme_softmax_wide_rows (test_gpu.GpuTests.test_extreme_softmax_wide_rows
 test_gemm (test_gpu.GpuTests.test_gemm) ... ok
 test_inference_with_parameters (test_gpu.GpuTests.test_inference_with_parameters) ... ok
 test_invalid_gpu_inputs (test_gpu.GpuTests.test_invalid_gpu_inputs) ... ok
+test_masked_softmax (test_gpu.GpuTests.test_masked_softmax)
+-inf scores (attention masks, padding) give probability 0 at every width. ... ok
 test_nondefault_stream (test_gpu.GpuTests.test_nondefault_stream) ... ok
 test_rmsnorm (test_gpu.GpuTests.test_rmsnorm) ... ok
 test_row_ops (test_gpu.GpuTests.test_row_ops) ... ok
 test_varying_sizes_reuse_compiled_kernels (test_gpu.GpuTests.test_varying_sizes_reuse_compiled_kernels)
 Per-request sizes (length, rows, stride, GEMM M) must not recompile or retune. ... ok
-test_add_tails (test_interpreter.InterpreterTests.test_add_tails) ... skipped 'Set TRITON_INTERPRET=1 with Triton installed'
-test_gemm_ragged_tiles (test_interpreter.InterpreterTests.test_gemm_ragged_tiles) ... skipped 'Set TRITON_INTERPRET=1 with Triton installed'
-test_row_kernels_with_row_gaps (test_interpreter.InterpreterTests.test_row_kernels_with_row_gaps) ... skipped 'Set TRITON_INTERPRET=1 with Triton installed'
+setUpClass (test_interpreter.InterpreterTests) ... skipped 'Set TRITON_INTERPRET=1 with Triton installed'
 
 ----------------------------------------------------------------------
-Ran 32 tests in 62.143s
+Ran 36 tests in 50.585s
 
-OK (skipped=4)
+OK (skipped=2)

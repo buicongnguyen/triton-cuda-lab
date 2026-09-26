@@ -1,0 +1,5 @@
+Three runs of build\cuda_portfolio.exe --json, kernels interleaved, 15 samples of 50 launches; median us
+run  vector_add  serial  parallel  online(float4)  online_scalar  parallel/online  parallel/scalar
+1        8.335  468.521     9.888           8.806          9.066             1.12x             1.09x
+2        8.091  472.371    10.977           9.825          9.978             1.12x             1.10x
+3        8.868  477.348     9.814           9.827          9.747             1.00x             1.01x

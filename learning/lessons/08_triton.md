@@ -111,6 +111,13 @@ Tests include row gaps, non-power-of-two widths and large positive/negative cons
 rows. If only the row-gap test fails, inspect addressing before adjusting tolerances.
 If negative constant rows fail, inspect the padding identity and stabilization.
 
+Convert the loaded values to FP32 here too, even though the checker cannot tell.
+In the row sum, a sum of FP16 values comes back as FP16 and is rounded before the
+FP32 store, so a missing conversion fails. In softmax, Triton 3.6 already evaluates
+`tl.max`, `tl.exp` and `tl.sum` of FP16 values in FP32 (the generated IR converts
+with `arith.extf` first), and the output is FP16 anyway. The explicit conversion
+states the precision instead of relying on a compiler promotion rule.
+
 ## A useful debugging order
 
 | Symptom | First thing to inspect |

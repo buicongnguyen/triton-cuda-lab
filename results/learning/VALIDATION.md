@@ -1,6 +1,6 @@
 # Beginner-path validation
 
-Executed on 2026-09-23 and last re-executed on 2026-09-25. The
+Executed on 2026-09-23 and last re-executed on 2026-09-26. The
 [second review](../../docs/records/REVIEW.md#second-review-2026-09-24) made kernel sizes
 runtime arguments and changed how the checker reports unfinished work. The course
 focuses on explanations, editable exercises and feedback; it makes no performance claims.
@@ -8,13 +8,13 @@ focuses on explanations, editable exercises and feedback; it makes no performanc
 | Check | Observed result | Evidence |
 | --- | --- | --- |
 | Seven CPU reference exercises | **40 named checks passed** | [cpu-solutions.log](cpu-solutions.log) |
-| Three Triton reference exercises | **34 GPU checks passed** on RTX 4080 SUPER | [all-solutions.log](all-solutions.log), which includes CPU and GPU checks |
+| Three Triton reference exercises | **36 GPU checks passed** on RTX 4080 SUPER, including two that launch the add kernel into a guarded buffer and fail if any lane stores past N | [all-solutions.log](all-solutions.log), which includes CPU and GPU checks |
 | Checker regression tests | **15 tests passed** (9 checker, 6 workshop runner) | [checker-tests.log](checker-tests.log) |
-| Portfolio regression suite | **28 of 32 passed**; the two-GPU test and three interpreter-only tests skipped | [portfolio-regression.log](portfolio-regression.log); interpreter run in [interpreter.log](../interpreter.log) |
+| Portfolio regression suite | **35 of 36 passed; the two-GPU test skipped, and the interpreter-only class, skipped at setup, runs separately (4 passed)**; GPU tests also check that the add and fused-GEMM checkers reject deliberately broken kernels | [portfolio-regression.log](portfolio-regression.log); interpreter run in [interpreter.log](../interpreter.log) |
 | Unfinished starter behavior | Reports every TODO check and returns exit code 2 | [starter-example.log](starter-example.log) |
 | Static review | Ruff passed across src, tests, scripts, examples and learning | Local Ruff execution |
 | Worked trace commands | Indexing, strides, reduction, softmax and matmul all ran | `python -m learning.explain TOPIC` |
-| Course source identity | Manifest regenerated on 2026-09-25 for the 41 core course files, now including the glossary | [source-sha256.json](source-sha256.json); workshop sources are identified by `source_sha256` in their reports |
+| Course source identity | Manifest of the 41 core course files, refreshed by `scripts/course_manifest.py` and checked against the files by `tests/test_docs.py` | [source-sha256.json](source-sha256.json); workshop sources are identified by `source_sha256` in their reports |
 
 CPU solutions and checker tests were executed with **`python -S`**, which disables
 site-package loading. This verifies that the first seven exercises do not need

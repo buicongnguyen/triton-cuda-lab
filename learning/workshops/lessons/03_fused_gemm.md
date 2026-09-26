@@ -37,6 +37,8 @@ duplicates or loses outputs at the end. GROUP=1 corresponds to row-major tiles.
 
 Grouping changes which tiles may reuse cached B data. It does not change the
 mathematical product and does not guarantee the GPU executes blocks in order.
+So the checker can only confirm that every tile is written exactly once; whether
+grouping helps is a benchmark question.
 
 ## Implement in stages
 

@@ -1,9 +1,11 @@
 # Intermediate and advanced workshop validation
 
-Executed **2026-09-23** and last re-executed **2026-09-25** on the NVIDIA RTX 4080 SUPER
+Executed **2026-09-23** and last re-executed **2026-09-26** on the NVIDIA RTX 4080 SUPER
 under Ubuntu WSL2. The [second review](../../docs/records/REVIEW.md#second-review-2026-09-24)
-made kernel sizes and strides runtime arguments in every workshop solution; the 2026-09-25
-run repeats every check and measurement after the portfolio kernels gained wide-row support.
+made kernel sizes and strides runtime arguments in every workshop solution; the
+2026-09-26 run repeats every check and measurement after the
+[fourth review](../../docs/records/REVIEW.md#fourth-review-2026-09-26) strengthened the
+fused-GEMM checker.
 Python 3.12.13, PyTorch 2.11.0+cu130, Triton 3.6.0, driver 595.97.
 This records execution of the separate reference solutions, not learner completion.
 
@@ -12,12 +14,12 @@ This records execution of the separate reference solutions, not learner completi
 | Check | Observed result | Evidence |
 | --- | --- | --- |
 | Online normalizer, standard library only | 11 named checks passed under `python -S` | CPU execution; also repeated at the start of [checks.log](checks.log) |
-| Five GPU reference implementations | 120 named checks passed, actual GPU execution | [checks.log](checks.log), 131 including the CPU workshop |
+| Five GPU reference implementations | 122 named checks passed, actual GPU execution | [checks.log](checks.log), 133 including the CPU workshop |
 | Learning checker regression suite | 15 tests passed under `python -S`, including six workshop-runner tests | [checker-tests.log](../learning/checker-tests.log) |
-| Portfolio regressions | 28 of 32 passed; the two-GPU test and three interpreter-only tests skipped | [portfolio-regression.log](portfolio-regression.log) |
+| Portfolio regressions | 35 of 36 passed; the two-GPU test skipped, and the interpreter-only class, skipped at setup, runs separately (4 passed) | [portfolio-regression.log](portfolio-regression.log) |
 | All benchmark variants | Correctness gate passed before timing | Errors and raw samples in the JSON below |
 | Static checks | Ruff passed across src, tests, scripts, examples and learning | Local Ruff execution |
-| Provenance | Benchmark source hashes match the current sources; all measurements re-run on 2026-09-25 | `source_sha256` in the raw reports |
+| Provenance | Benchmark source hashes match the current sources, checked by `tests/test_docs.py`; all measurements re-run on 2026-09-26 | `source_sha256` in the raw reports |
 
 Checks cover ragged dimensions, empty outputs, all supported dtypes, selected
 strided/broadcast layouts, option variants, invalid metadata, input preservation,
@@ -33,7 +35,7 @@ followed by this assistant self-review; it was not an independent human review.
 | Learners could accidentally validate answers as their own | Starter paths remain separate; solution mode is explicitly labeled; TODO/unavailable outcomes return nonzero |
 | Intermediate-only selection could pass without running anything | Empty CPU selection returns 3 with instructions to include GPU |
 | Both operands in backward may have different strides | Separate y/g strides; both-strided and 8-warp case added |
-| Fused GEMM can round too early or mis-handle K=0 | Epilogue acts on FP32 accumulator; FP64 oracle; zero-K and ragged final-group cases |
+| Fused GEMM can round too early or mis-handle K=0 | Epilogue acts on FP32 accumulator; FP64 oracle; zero-K and ragged final-group cases. The checker first accepted an FP16 accumulator; an exact FP16 case (2048 + 1 + 1 = 2050 only with one rounding) and a K = 1024 case now reject it, and a GPU test checks that |
 | Empty online states can produce NaN | Explicit identity handling, including empty+empty |
 | Split softmax could race across stages | Ordered launches on the current stream; private per-call scratch; no global spin barriers |
 | Causal attention can read future values or mishandle a changing maximum | Key mask includes diagonal; both numerator and denominator rescaled; perturbation and large-logit cases |
@@ -61,16 +63,16 @@ order is M,N,K; attention is N,D and causal=True. Strided inputs are transposes.
 
 | Operator / shape | Candidate | Graph baseline / candidate (us) | Graph ratio | Event ratio |
 | --- | --- | ---: | ---: | ---: |
-| Strided softmax, 256x257 | direct_4w | 3.942 / 2.509 | 1.57x | 0.61x |
-| Strided softmax, 1024x1024 | direct_4w | 19.098 / 15.974 | 1.20x | 0.67x |
-| Softmax VJP, 256x1025 | fused_vjp | 13.722 / 1.994 | 6.88x | 2.28x |
-| Softmax VJP, 1024x4097 | fused_vjp | 126.618 / 14.778 | 8.57x | 4.32x |
-| GEMM+bias+ReLU, 127x65x33 | group_4 | 12.237 / 2.509 | 4.88x | 2.13x |
-| GEMM+bias+ReLU, 512x512x512 | group_4 | 30.821 / 7.117 | 4.33x | 1.81x |
-| Split softmax, 4x32769 | chunk_1024 | 8.858 / 3.994 | 2.22x | 0.23x |
-| Split softmax, 64x131072 | chunk_4096 | 25.907 / 19.915 | 1.30x | 0.48x |
-| Attention, 129x32 | stream_bn64 | 6.912 / 3.320 | 2.08x | 0.32x |
-| Attention, 512x64 | stream_bn64 | 8.704 / 8.960 | 0.97x | 1.00x |
+| Strided softmax, 256x257 | direct_4w | 3.922 / 2.304 | 1.70x | 1.08x |
+| Strided softmax, 1024x1024 | direct_4w | 18.893 / 15.514 | 1.22x | 0.60x |
+| Softmax VJP, 256x1025 | fused_vjp | 13.466 / 1.792 | 7.51x | 1.93x |
+| Softmax VJP, 1024x4097 | fused_vjp | 160.717 / 14.438 | 11.13x | 2.37x |
+| GEMM+bias+ReLU, 127x65x33 | group_4 | 12.379 / 2.560 | 4.84x | 4.37x |
+| GEMM+bias+ReLU, 512x512x512 | group_4 | 31.122 / 7.253 | 4.29x | 2.71x |
+| Split softmax, 4x32769 | chunk_1024 | 8.691 / 4.096 | 2.12x | 0.18x |
+| Split softmax, 64x131072 | chunk_4096 | 25.958 / 19.917 | 1.30x | 0.34x |
+| Attention, 129x32 | stream_bn64 | 6.963 / 3.478 | 2.00x | 0.65x |
+| Attention, 512x64 | stream_bn64 | 8.499 / 8.797 | 0.97x | 0.83x |
 
 Interpretation matters:
 
@@ -83,15 +85,17 @@ Interpretation matters:
   These ratios **do not establish a win over fused half-precision cuBLASLt**.
   GROUP=1/4/8 were nearly tied at 512-cubed; the dispersion does not support a
   cache-efficiency claim or a convincing winner among those group sizes.
-- **Split softmax:** chunk_256 at 64x131072 took 54.016 us in graph mode, **0.48x**
+- **Split softmax:** chunk_256 at 64x131072 took 54.102 us in graph mode, **0.48x**
   the PyTorch baseline. More programs were not automatically better. In event
   timing all three split candidates lost on both shapes; Python dispatch and
   three launches change the result materially.
 - **Attention:** the primary baseline is PyTorch SDPA with automatic backend
-  selection. BN=64 won the small graph case but did not establish a win on the
-  larger case; its 0.97x result is close enough to treat as roughly tied. The small
-  event case lost (0.32x) and the larger one tied (1.00x). BN=32 was clearly slower
-  in the larger graph case at 0.71x.
+  selection. BN=64 won the small graph case (2.00x) but did not establish a win on
+  the larger case; its 0.97x result is close enough to treat as roughly tied. BN=32
+  was clearly slower in the larger graph case at 0.71x. In event timing BN=64
+  measured 0.65x and 0.83x here, 0.32x and 1.00x on 2026-09-25, and 1.09x and
+  1.37x in an earlier run on 2026-09-26: event ratios that include Python dispatch of
+  several launches move with host load and do not rank these implementations.
 
 These are local microbenchmarks on a desktop GPU, not isolated-server guarantees
 or model-level latency results. Min/max dispersion is recorded. No clock lock,

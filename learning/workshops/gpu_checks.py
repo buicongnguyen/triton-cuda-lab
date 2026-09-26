@@ -125,6 +125,26 @@ def gpu_cases(name):
             name,
         )
 
+    def exact_accumulation(module):
+        # 2048 + 1 + bias 1 = 2050 is exact in FP16 only with an FP32 accumulator and one
+        # final rounding; rounding the partial sum 2049 to FP16 first gives 2048.
+        a = torch.tensor([[2048.0, 1.0]], device="cuda", dtype=torch.float16)
+        b = torch.ones((2, 1), device="cuda", dtype=torch.float16)
+        bias = torch.ones(1, device="cuda", dtype=torch.float16)
+        value = module.matmul_bias_relu(a, b, bias).item()
+        if value != 2050.0:
+            raise AssertionError(
+                f"Expected exactly 2050 (FP32 accumulation, one rounding): {value}"
+            )
+
+    def long_k_case(module):
+        # 32 K tiles: rounding between tiles accumulates error that one rounding does not.
+        a, b = rand((64, 1024), torch.float16), rand((1024, 64), torch.float16)
+        bias = rand((64,), torch.float16)
+        expected = (a.double() @ b.double() + bias.double()).relu().half()
+        actual = module.matmul_bias_relu(a, b, bias)
+        torch.testing.assert_close(actual, expected, atol=0.015, rtol=0.003)
+
     def attention_case(module, n, d, dtype, causal, block=32, uniform=False, extreme=False):
         q, k, v = (rand((n, d), dtype) for _ in range(3))
         if uniform:
@@ -224,6 +244,8 @@ def gpu_cases(name):
                     f"group={group}, BM={tile}, incomplete group",
                     lambda m, g=group, t=tile: gemm_case(m, (257, 65, 33), torch.float16, g, t),
                 )
+        add("FP32 accumulation and one rounding (exact FP16 case)", exact_accumulation)
+        add("K=1024 with FP16 matmul tolerance", long_k_case)
         add(
             "reject FP32 GEMM",
             lambda m: expect_error(

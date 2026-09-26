@@ -1,7 +1,7 @@
 FP16 1024x1024, 20000 calls each; host microseconds per call
-torch.softmax           8.25
-input validation        1.55
-output allocation       2.90
-device guard            0.38
-Triton launch only     17.29
-ops.softmax total      33.73
+torch.softmax           9.78
+input validation        1.68
+output allocation       2.63
+device guard            0.61
+Triton launch only     15.99
+ops.softmax total      28.57

@@ -82,8 +82,11 @@ individual lesson before interpreting a speedup: these baselines differ.
 
 Graph timing measures warmed captured execution. Event timing surrounds repeated
 Python calls and can include GPU idle time caused by host dispatch. Neither is
-end-to-end model latency. Allocation/copy costs inside a callable belong to that
-variant; compilation is warmed up before measurement.
+end-to-end model latency. Copies inside a callable are timed in both modes.
+Allocations are timed only with `--timing events`: graph capture serves
+`torch.empty` from the graph's memory pool, so replay never pays allocator cost.
+Compare allocation strategies with events timing. Compilation is warmed up
+before measurement.
 
 Use [the experiment worksheet and capstones](EXPERIMENTS.md) to record your work,
 then compare with [the answer explanations](ANSWER_KEY.md). Reference results

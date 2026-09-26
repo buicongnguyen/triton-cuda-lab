@@ -67,7 +67,10 @@ python -m learning.workshops.benchmark --op split_softmax --output results/local
 ```
 
 The checker covers the width cap, ragged final chunks, large constant rows,
-isolated dominant logits, three dtypes, all chunk options and a non-default stream.
+isolated dominant logits, three dtypes, all chunk options and a call made on a
+non-default stream. That last check compares results after synchronizing, so it
+cannot prove every stage launched on the caller's stream; review your launches
+for that.
 
 ## Form a performance hypothesis
 

@@ -2,7 +2,6 @@
 
 import argparse
 import datetime
-import hashlib
 import json
 import math
 import random
@@ -12,6 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from kernel_portfolio.benchmark import (
+    file_sha256,
     l2_flush_buffer,
     prepare_timer,
     revision,
@@ -159,11 +159,9 @@ def main(argv=None):
         "git": revision(),
         "settings": {**vars(args), "output": str(args.output), "tf32": False},
         "implementation": "reference solutions" if args.solution else "learner exercises",
-        "source_sha256": {
-            p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(sources)
-        },
+        "source_sha256": {p.relative_to(repo).as_posix(): file_sha256(p) for p in sorted(sources)},
         "cases": [],
+        "skipped": [],
     }
     selected = SUITES if args.op == "all" else {args.op: SUITES[args.op]}
     with torch.inference_mode():
@@ -172,47 +170,55 @@ def main(argv=None):
             module = load_exercise(
                 ROOT / ("solutions" if args.solution else "exercises") / f"{name}.py"
             )
-            for shape in shapes:
-                functions, expected, metadata = make_case(
-                    name, module, shape, getattr(torch, args.dtype)
-                )
-                timers, times, errors = {}, {}, {}
-                for label, fn in functions.items():
-                    actual = fn()
-                    torch.testing.assert_close(actual, expected, **tolerance(name, expected.dtype))
-                    errors[label] = (actual.float() - expected.float()).abs().max().item()
-                    timers[label] = prepare_timer(fn, args.timing, calls_per_timer)
-                    times[label] = []
-                for _ in range(args.samples):
-                    labels = list(functions)
-                    rng.shuffle(labels)
-                    for label in labels:
-                        run, count = timers[label]
-                        times[label].append(
-                            sample_ms(run, count)
-                            if flush is None
-                            else sample_cold_ms(run, args.iterations, flush)
+            # An unfinished learner exercise raises NotImplementedError on its first
+            # call; record it and keep measuring the others instead of losing the run.
+            try:
+                for shape in shapes:
+                    functions, expected, metadata = make_case(
+                        name, module, shape, getattr(torch, args.dtype)
+                    )
+                    timers, times, errors = {}, {}, {}
+                    for label, fn in functions.items():
+                        actual = fn()
+                        torch.testing.assert_close(
+                            actual, expected, **tolerance(name, expected.dtype)
                         )
-                base = summarize(times["torch"])["median_ms"]
-                case = {
-                    "op": name,
-                    "shape": shape,
-                    "dtype": args.dtype,
-                    "metadata": metadata,
-                    "variants": {},
-                }
-                for label, samples in times.items():
-                    stats = summarize(samples)
-                    stats.update(
-                        speedup_vs_torch=base / stats["median_ms"], max_abs_error=errors[label]
-                    )
-                    case["variants"][label] = stats
-                    print(
-                        f"{name:20} {str(shape):18} {label:20} "
-                        f"{stats['median_ms'] * 1000:9.3f} us {stats['speedup_vs_torch']:6.2f}x"
-                    )
-                report["cases"].append(case)
-                timers.clear()
+                        errors[label] = (actual.float() - expected.float()).abs().max().item()
+                        timers[label] = prepare_timer(fn, args.timing, calls_per_timer)
+                        times[label] = []
+                    for _ in range(args.samples):
+                        labels = list(functions)
+                        rng.shuffle(labels)
+                        for label in labels:
+                            run, count = timers[label]
+                            times[label].append(
+                                sample_ms(run, count)
+                                if flush is None
+                                else sample_cold_ms(run, args.iterations, flush)
+                            )
+                    base = summarize(times["torch"])["median_ms"]
+                    case = {
+                        "op": name,
+                        "shape": shape,
+                        "dtype": args.dtype,
+                        "metadata": metadata,
+                        "variants": {},
+                    }
+                    for label, samples in times.items():
+                        stats = summarize(samples)
+                        stats.update(
+                            speedup_vs_torch=base / stats["median_ms"], max_abs_error=errors[label]
+                        )
+                        case["variants"][label] = stats
+                        print(
+                            f"{name:20} {str(shape):18} {label:20} "
+                            f"{stats['median_ms'] * 1000:9.3f} us {stats['speedup_vs_torch']:6.2f}x"
+                        )
+                    report["cases"].append(case)
+                    timers.clear()
+            except NotImplementedError as exc:
+                print(f"{name:20} skipped: unfinished exercise ({exc})")
+                report["skipped"].append({"op": name, "reason": str(exc)})
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Saved {args.output}")

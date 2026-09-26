@@ -83,8 +83,10 @@ def _softmax(X, OUT, STRIDE, N: tl.constexpr, BLOCK: tl.constexpr):
 @triton.jit
 def _softmax_looped(X, OUT, STRIDE, N: tl.constexpr, BLOCK: tl.constexpr):
     # Pass 1 keeps an online (max, sum) per lane (workshop A1's merge rule); pass 2
-    # rereads the row and writes probabilities. Requires N > BLOCK, so the first chunk
-    # is full and every lane's running maximum is finite from then on.
+    # rereads the row and writes probabilities. A lane that has seen only -inf (tail
+    # padding or a masked score) shifts by 0 instead of -inf, so it keeps sum 0 rather
+    # than computing (-inf) - (-inf) = NaN. A fully masked row still yields NaN, as in
+    # torch.softmax.
     row = tl.program_id(0)
     lane_max = tl.full((BLOCK,), -float("inf"), tl.float32)
     lane_sum = tl.zeros((BLOCK,), tl.float32)
@@ -92,7 +94,8 @@ def _softmax_looped(X, OUT, STRIDE, N: tl.constexpr, BLOCK: tl.constexpr):
         col = start + tl.arange(0, BLOCK)
         x = tl.load(X + row * STRIDE + col, col < N, other=-float("inf")).to(tl.float32)
         new_max = tl.maximum(lane_max, x)
-        lane_sum = lane_sum * tl.exp(lane_max - new_max) + tl.exp(x - new_max)
+        shift = tl.where(new_max == -float("inf"), 0.0, new_max)
+        lane_sum = lane_sum * tl.exp(lane_max - shift) + tl.exp(x - shift)
         lane_max = new_max
     row_max = tl.max(lane_max, axis=0)
     row_sum = tl.sum(lane_sum * tl.exp(lane_max - row_max), axis=0)

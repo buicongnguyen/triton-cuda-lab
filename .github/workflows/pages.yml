@@ -2,35 +2,41 @@ name: Course site
 on:
   push:
     branches: [main]
+  # Pull requests build and link-check the site without deploying it.
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.ref }}
+  # Let an in-progress deployment finish rather than leave Pages half-updated.
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install -c requirements-tested.txt mkdocs mkdocs-material
       # Links between pages are checked; --strict fails on any broken link or anchor.
       - run: python scripts/build_site.py --out site_build
       - run: python -m mkdocs build --strict -f site_build/mkdocs.yml
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site_build/site
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    # Only the job that publishes gets the Pages and OIDC token permissions.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

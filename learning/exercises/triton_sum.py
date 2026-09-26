@@ -15,7 +15,7 @@ def row_sum_kernel(X, OUT, STRIDE, N, BLOCK: tl.constexpr):
 
 
 def row_sum(x):
-    """Checker supplies 2D CUDA rows with contiguous columns, width <= 8192."""
+    """Checker supplies 2D CUDA rows with contiguous columns, 1 <= width <= 8192."""
     raise NotImplementedError("Fill row_sum_kernel, then remove this line")
     rows, width = x.shape
     out = torch.empty(rows, device=x.device, dtype=torch.float32)

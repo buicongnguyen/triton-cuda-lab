@@ -15,7 +15,7 @@ def softmax_kernel(X, OUT, STRIDE, N, BLOCK: tl.constexpr):
 
 
 def softmax(x):
-    """Checker supplies finite, detached CUDA input with contiguous columns."""
+    """Checker supplies finite, detached CUDA input: contiguous columns, 1 <= width <= 8192."""
     raise NotImplementedError("Fill softmax_kernel, then remove this line")
     rows, width = x.shape
     out = torch.empty(x.shape, device=x.device, dtype=x.dtype)

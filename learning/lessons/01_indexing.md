@@ -62,7 +62,7 @@ zero for masked lanes; the masked store writes nothing for those lanes.
 | Mistake | What happens | Revealing input |
 | --- | --- | --- |
 | `N // BLOCK` grid size | Tail outputs never get written | N=257, BLOCK=256 |
-| Use `<= N` in mask | One invalid element is accessed | N=256 |
+| Use `<= N` in mask | One invalid element is accessed | N=257, BLOCK=256 (with N=256 no lane has offset N) |
 | Forget `program_id * BLOCK` | All programs write the first block | N=1024 |
 | Mask the store but not the load | Reads can still go out of bounds | N=257 |
 

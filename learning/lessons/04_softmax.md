@@ -81,8 +81,10 @@ Point to the two reductions, the conversion to FP32, the padded load value and
 the output store mask. Up to width 8192 a row fits one block; wider rows (up to
 2^20) use `_softmax_looped`, which keeps an online maximum and sum per lane, the
 idea workshop A1 develops. The wrapper rejects noncontiguous columns. The examples
-assume finite inputs: an all-negative-infinity row needs a separately defined
-policy because subtracting its maximum produces NaNs.
+assume finite inputs. A `-inf` entry (a masked score) is fine in one block, since
+it becomes `exp(-inf) = 0`, but the looped kernel needed a guard: a lane that has
+seen only `-inf` would compute `(-inf) - (-inf)` = NaN. A row that is entirely
+`-inf` has no defined softmax; like PyTorch, the kernels return NaN.
 
 **Exit check:** explain why max subtraction preserves softmax, why exp alone is
 insufficient, and why zero padding is wrong even for a positive row. Then move

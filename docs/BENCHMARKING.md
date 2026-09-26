@@ -31,7 +31,15 @@ reduction disabled. Input/output conversion and tolerances are recorded by code.
 
 The default captures 30 invocations per CUDA graph after correctness, JIT,
 autotuning and five warmup calls. Each of nine samples times a graph replay using
-CUDA events and divides by 30. Order is randomized each round. These numbers
+CUDA events and divides by 30. All cases are prepared first, then each case is
+visited three times (`--visits`) in a random order across the run. A visit replays
+each variant once untimed, then takes three shuffled rounds of the case's variants
+back to back, so a ratio compares measurements taken moments apart. On a GPU shared
+with desktop applications, a burst of activity then spoils one visit of one case,
+which the median of nine samples discards. Two simpler designs failed on this
+machine: timing each case in one block let a burst slow a whole case 2-3x, and
+interleaving every sample of every case separated a case's variants in time and
+made tiny kernels pay to reload their graphs. These numbers
 describe repeated device execution with warm caches and reused graph addresses.
 They exclude Python dispatch and capture cost; graph memory pools retain captured
 allocations. They are not application request latency or cold-cache bandwidth.
