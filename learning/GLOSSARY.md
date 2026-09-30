@@ -83,7 +83,7 @@ Lesson numbers refer to the [beginner course](README.md).
 | Term | Meaning | First needed |
 | --- | --- | --- |
 | Jacobian / VJP | Matrix of all partial derivatives / vector-Jacobian product: the gradient a backward pass actually needs | Workshop I2 |
-| Autograd | PyTorch's automatic differentiation; these kernels are forward-only and do not register with it | Workshop I2 |
+| Autograd | PyTorch's automatic differentiation. The portfolio's softmax and residual RMSNorm register Triton backward kernels with it; the other operators are forward-only | Workshop I2 |
 | Epilogue | Work applied to a GEMM result before storing it, e.g. bias and ReLU | Workshop I3 |
 | Grouped tile ordering | Launching output tiles so neighbors reuse cached inputs; `GROUP` in the fused GEMM | Workshop I3 |
 | Online normalizer | Mergeable `(max, sum)` state that lets softmax statistics be computed chunk by chunk | Workshop A1 |

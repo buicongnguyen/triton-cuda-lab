@@ -252,16 +252,29 @@ z = residual_rmsnorm(x, x, w)                    # eps defaults to 1e-5
 c = matmul(x, x)                                 # FP16/BF16 only
 with torch.no_grad():                            # model parameters are fine here
     z = residual_rmsnorm(x, x, torch.nn.Parameter(w))
+
+# softmax and residual_rmsnorm train: autograd runs their Triton backward kernels.
+weight = torch.nn.Parameter(torch.ones(1024, device="cuda", dtype=torch.float16))
+h = x.detach().requires_grad_()
+softmax(residual_rmsnorm(h, h, weight)).float().square().sum().backward()
+print(h.grad.shape, weight.grad.shape)           # both gradients are filled
 ```
+
+The backward kernels are also callable directly, for example to measure them:
+`softmax_backward(grad, y)` takes the saved softmax output, and
+`residual_rmsnorm_backward(grad, x, residual, weight)` returns the input gradient
+(shared by `x` and `residual`) and the weight gradient.
 
 Unsupported inputs raise `ValueError` or `TypeError` before anything launches;
 the message names the violated rule.
 
 Inside a compiled model, use the custom-op versions. They run the same kernels
 with the same shape, dtype and device checks, and `torch.compile` can capture them
-in one graph. Their autograd error occurs on backward rather than at the call:
-the custom-op dispatcher disables grad recording inside the implementation.
-Use `torch.no_grad()` or `torch.inference_mode()` for inference:
+in one graph. The softmax and residual RMSNorm custom ops register their backward
+kernels with autograd, so a compiled training step traces both directions. The
+`add`, `row_sum` and `matmul` custom ops have no autograd formula: they accept
+gradient-tracking inputs but raise on backward. For inference, use
+`torch.no_grad()` or `torch.inference_mode()`:
 
 ```python
 import kernel_portfolio.library  # registers torch.ops.kernel_portfolio.*
@@ -284,15 +297,20 @@ Use the plain `kernel_portfolio.*` functions for eager calls: going through
 | --- | --- | --- |
 | `add` | Equal contiguous vectors, FP32/FP16/BF16 | Same shape/dtype; empty vector allowed |
 | `row_sum` | 2D, width 1–1,048,576, contiguous columns (any stride for width 1), nonoverlapping rows | One FP32 value per row; rows wider than 8192 loop over chunks |
-| `softmax` | Same row layout; finite values, or `-inf` for masked entries | Same shape/dtype, stable along last dimension; masked entries get 0, and a row with no finite value gives NaN as in PyTorch |
-| `residual_rmsnorm` | Same-shape row tensors and contiguous weight vector of matching dtype/device | FP32 residual addition/reduction, one rounding at output, positive finite epsilon |
+| `softmax` | Same row layout; finite values, or `-inf` for masked entries | Same shape/dtype, stable along last dimension; masked entries get 0, and a row with no finite value gives NaN as in PyTorch. Records gradients |
+| `softmax_backward` | Upstream gradient of any strides; the contiguous softmax output | Input gradient `y * (grad - sum(y * grad))`, same dtype |
+| `residual_rmsnorm` | Same-shape row tensors and contiguous weight vector of matching dtype/device | FP32 residual addition/reduction, one rounding at output, positive finite epsilon. Records gradients for all three tensors |
+| `residual_rmsnorm_backward` | Upstream gradient of any strides; the forward's inputs and `eps` | Input gradient (for both `x` and `residual`) and weight gradient; the weight gradient is summed over rows in FP32 in a fixed order, so it is deterministic |
 | `matmul` | Contiguous 2D FP16/BF16, matching inner dimensions | Same dtype, FP32 accumulation; zero dimensions supported |
 
 All calls require NVIDIA CUDA, reject mixed dtypes/devices, and allocate fresh
-outputs. The plain functions reject `requires_grad` inputs while autograd is enabled;
-custom ops accept them but raise if backward is attempted because no autograd formula
-is registered. Both interfaces accept model parameters under `torch.no_grad()` or
-`torch.inference_mode()`.
+outputs. `add`, `row_sum` and `matmul` reject `requires_grad` inputs while autograd
+is enabled (their custom ops accept them but raise on backward); `softmax` and
+`residual_rmsnorm` record gradients instead, and double backward is not supported.
+Both interfaces accept model parameters under `torch.no_grad()` or
+`torch.inference_mode()`. Rows wider than 8192 loop over chunks in one program per
+row, except that softmax and RMSNorm (above 16384) split each row across programs
+when there are fewer rows than SMs.
 Row width and GEMM N/K are compile-time constants: the first call with a new width
 or weight shape compiles, typically once per model. Vector lengths, row counts,
 row strides, GEMM M and `eps` are runtime arguments, so a new batch size reuses the
@@ -300,7 +318,7 @@ compiled kernel. GEMM autotuning runs once per power-of-two bucket of M and time
 real launches, so call `matmul` once for a new bucket before capturing it in a
 CUDA graph.
 
-No implicit input copies, broadcasting, backward, NaN/Inf policy, or production
+No implicit input copies, broadcasting, double backward, NaN/Inf policy, or production
 dispatcher is provided. Inputs must be finite, except that softmax accepts `-inf`
 for masked entries; RMSNorm also assumes its FP32 squared residuals and reduction
 remain finite. The wrappers do not scan tensors

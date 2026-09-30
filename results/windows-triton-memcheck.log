@@ -1,9 +1,13 @@
 ========= COMPUTE-SANITIZER
+note: the GPU was 11% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 10% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 15% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
 <repo>\.venv-win\Lib\site-packages\torch\jit\_script.py:359: DeprecationWarning: `torch.jit.script_method` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
   warnings.warn(
-.........s...........
+.note: the GPU was 17% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+...........s.............
 ----------------------------------------------------------------------
-Ran 21 tests in 71.964s
+Ran 26 tests in 170.287s
 
 OK (skipped=1)
 ========= ERROR SUMMARY: 0 errors

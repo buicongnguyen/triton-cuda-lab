@@ -7,13 +7,15 @@ import json
 import random
 import statistics
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
 
 from . import ops, references
-from .environment import describe
+from .environment import describe, gpu_utilization
 
 # 16384 x 4096 exceeds a 64 MiB L2 even in FP16, so at least one case per memory-bound
 # operator measures DRAM rather than cache-resident traffic. The two widest shapes use
@@ -25,12 +27,85 @@ SUITES = {
     "softmax": ROW_SHAPES,
     "rmsnorm": ROW_SHAPES,
     "matmul": [(127, 255, 65), (512, 512, 512), (1024, 1024, 1024), (4096, 4096, 4096)],
+    # Forward plus backward through autograd, compared on the input gradient.
+    "softmax_train": ROW_SHAPES,
+    "rmsnorm_train": ROW_SHAPES,
+}
+TRAINING = ("softmax_train", "rmsnorm_train")
+# --op all runs the forward suites; --op training runs both training suites. They are
+# separate runs because every prepared case stays in GPU memory until sampling ends.
+GROUPS = {
+    "all": [op for op in SUITES if op not in TRAINING],
+    "training": list(TRAINING),
 }
 
 
-def make_case(op, shape, dtype):
-    """Return named functions, an independent oracle, and minimal logical I/O bytes."""
+def _with_autograd(fn):
+    """Run fn with autograd available inside the benchmark's inference mode."""
 
+    def run():
+        with torch.inference_mode(False), torch.enable_grad():
+            return fn()
+
+    return run
+
+
+def _training_case(op, shape, dtype, compile_torch):
+    """One forward and backward pass per call, returning the input gradient.
+
+    The whole step is timed because a CUDA graph can only replay a backward pass whose
+    forward was captured with it. The oracle is the closed-form FP64 gradient.
+    """
+    rows, width = shape
+    itemsize = torch.empty((), dtype=dtype).element_size()
+    with torch.inference_mode(False):
+        x = torch.randn(shape, device="cuda", dtype=dtype, requires_grad=True)
+        dy = torch.randn(shape, device="cuda", dtype=dtype)
+        if op == "softmax_train":
+            leaves = (x,)
+            forwards = {"torch": lambda x: torch.softmax(x, dim=-1), "triton": ops.softmax}
+            y = torch.softmax(x.detach().double(), dim=-1)
+            oracle = y * (dy.double() - (y * dy.double()).sum(-1, keepdim=True))
+            # Forward: read x, write y. Backward: read y and dy, write dx.
+            logical = 5 * x.numel() * itemsize
+        else:
+            residual = torch.randn(shape, device="cuda", dtype=dtype, requires_grad=True)
+            weight = torch.randn(width, device="cuda", dtype=dtype, requires_grad=True)
+            leaves = (x, residual, weight)
+            forwards = {
+                "torch": references.residual_rmsnorm,
+                "torch_rms_norm": lambda x, r, w: F.rms_norm(
+                    x.float() + r.float(), (width,), w.float(), 1e-5
+                ).to(dtype),
+                "triton": ops.residual_rmsnorm,
+            }
+            z = x.detach().double() + residual.detach().double()
+            inverse = torch.rsqrt(z.square().mean(-1, keepdim=True) + 1e-5)
+            g = dy.double() * weight.detach().double()
+            oracle = inverse * (g - z * inverse.square() * (g * z).mean(-1, keepdim=True))
+            del z, g
+            # Forward: read x, r, w, write out. Backward: read x, r, w, dy; write dx, dw.
+            logical = (7 * x.numel() + 3 * width) * itemsize
+    if compile_torch:
+        forwards["torch_compiled"] = torch.compile(forwards["torch"], fullgraph=True)
+
+    def step(forward):
+        return _with_autograd(lambda: torch.autograd.grad(forward(*leaves), leaves, dy)[0])
+
+    return {name: step(fn) for name, fn in forwards.items()}, oracle.to(dtype), logical
+
+
+def make_case(op, shape, dtype, compile_torch=False):
+    """Return named functions, an independent oracle, and minimal logical I/O bytes."""
+    if op in TRAINING:
+        return _training_case(op, shape, dtype, compile_torch)
+    functions, expected, logical = _forward_case(op, shape, dtype)
+    if compile_torch:
+        functions["torch_compiled"] = torch.compile(functions["torch"], fullgraph=True)
+    return functions, expected, logical
+
+
+def _forward_case(op, shape, dtype):
     def rand(dims):
         return torch.randn(dims, device="cuda", dtype=dtype)
 
@@ -107,6 +182,16 @@ def make_case(op, shape, dtype):
 
 
 def tolerance(op, dtype):
+    if op in ("softmax_backward", "softmax_train"):
+        # Gradients mix saved rounded probabilities with the upstream gradient.
+        return {
+            "atol": 1e-4 if dtype == torch.bfloat16 else (1e-5 if dtype == torch.float16 else 1e-6),
+            "rtol": 0.016
+            if dtype == torch.bfloat16
+            else (0.004 if dtype == torch.float16 else 2e-5),
+        }
+    if op == "rmsnorm_train":
+        op = "rmsnorm"
     if op == "row_sum":
         return {"atol": 2e-4, "rtol": 2e-4}
     if op == "matmul":
@@ -195,8 +280,16 @@ def revision():
     here = Path(__file__).resolve().parent
 
     def git(*args):
+        # --no-optional-locks: status only reads. Without it, git takes .git/index.lock
+        # to refresh the index, and a status killed by the timeout on a busy machine
+        # leaves that lock behind, blocking the user's next commit.
         return subprocess.run(
-            ["git", *args], cwd=here, capture_output=True, text=True, check=False, timeout=5
+            ["git", "--no-optional-locks", *args],
+            cwd=here,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
         )
 
     try:
@@ -223,7 +316,12 @@ def source_hashes():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--op", choices=["all", *SUITES], default="all")
+    parser.add_argument(
+        "--op",
+        choices=[*GROUPS, *SUITES],
+        default="all",
+        help="all: forward suites; training: forward+backward suites; or one operation",
+    )
     parser.add_argument("--dtype", choices=["float16", "bfloat16", "float32"], default="float16")
     parser.add_argument("--shape", type=int, nargs="+", help="Custom shape; GEMM order is M N K")
     parser.add_argument("--samples", type=int, default=9)
@@ -254,7 +352,7 @@ def main(argv=None):
         parser.error("Use at least 3 samples and 1 iteration")
     if args.visits < 1 or args.samples % args.visits:
         parser.error("--samples must be a multiple of --visits")
-    if args.shape and (args.op == "all" or any(d <= 0 for d in args.shape)):
+    if args.shape and (args.op in GROUPS or any(d <= 0 for d in args.shape)):
         parser.error("A custom positive shape requires one --op")
     if args.shape and len(args.shape) != len(SUITES[args.op][0]):
         parser.error("Shape rank does not match operation")
@@ -279,15 +377,23 @@ def main(argv=None):
         "source_sha256": source_hashes(),
         "cases": [],
     }
-    selected = SUITES if args.op == "all" else {args.op: SUITES[args.op]}
+    selected = {op: SUITES[op] for op in GROUPS.get(args.op, [args.op])}
+    # Other programs' GPU use, sampled before this run starts and after it ends.
+    busy = {"before": gpu_utilization()}
+    if busy["before"] and statistics.median(busy["before"]) >= 10:
+        print(
+            f"note: the GPU was {statistics.median(busy['before']):.0f}% busy before this run; "
+            "other programs can shift results between runs (docs/BENCHMARKING.md)",
+            file=sys.stderr,
+        )
     with torch.inference_mode():
         # Check and prepare every case first, then sample them all together (below).
         prepared = []
         for op, shapes in selected.items():
             for shape in [tuple(args.shape)] if args.shape else shapes:
-                functions, expected, logical_bytes = make_case(op, shape, dtype)
-                if args.compile_torch:
-                    functions["torch_compiled"] = torch.compile(functions["torch"], fullgraph=True)
+                functions, expected, logical_bytes = make_case(
+                    op, shape, dtype, compile_torch=args.compile_torch
+                )
                 case = {
                     "op": op,
                     "shape": shape,
@@ -354,6 +460,10 @@ def main(argv=None):
                 print(f"{op:8} {str(shape):23} {name:18} {ms * 1e3:9.3f} us {baseline / ms:6.2f}x")
             report["cases"].append(case)
         prepared.clear()
+    torch.cuda.synchronize()
+    time.sleep(0.5)  # let this process's own work drop out of the utilization window
+    busy["after"] = gpu_utilization()
+    report["gpu_utilization_percent"] = busy
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Saved {args.output}")

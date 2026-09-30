@@ -43,8 +43,10 @@ class InterpreterTests(unittest.TestCase):
 
     def test_row_kernels_with_row_gaps(self):
         for dtype in ROW_DTYPES:
-            # 8193 and 12001 take the looped path (chunks of 2048 on CPU tensors).
-            for rows, width in ((1, 1), (7, 33), (3, 130), (2, 8193), (1, 12001)):
+            # On CPU tensors one wide row splits across programs and more rows loop in
+            # 2048-wide chunks (see _row_plan): 8193 loops; a single 12001 row splits for
+            # softmax; a single 20000 row also splits for RMSNorm.
+            for rows, width in ((1, 1), (7, 33), (3, 130), (2, 8193), (1, 12001), (1, 20000)):
                 with self.subTest(dtype=dtype, shape=(rows, width)):
                     x = torch.randn((rows, width + 5), dtype=dtype)[:, :width]
                     r = torch.randn((rows, width + 3), dtype=dtype)[:, :width]
@@ -67,10 +69,11 @@ class InterpreterTests(unittest.TestCase):
                     )
 
     def test_masked_softmax(self):
-        # -inf entries, including a masked prefix longer than one looped chunk.
-        for width in (33, 8193):
-            with self.subTest(width=width):
-                x = torch.randn((2, width))
+        # -inf entries, including a masked prefix longer than one chunk: one block,
+        # a looped row pair and a single split row.
+        for rows, width in ((2, 33), (2, 8193), (1, 8193)):
+            with self.subTest(shape=(rows, width)):
+                x = torch.randn((rows, width))
                 x[:, : width // 3] = float("-inf")
                 x[:, 1::5] = float("-inf")
                 out = torch.empty_like(x)
@@ -79,6 +82,31 @@ class InterpreterTests(unittest.TestCase):
                 torch.testing.assert_close(
                     out, x.double().softmax(-1).float(), **tolerance("softmax", torch.float32)
                 )
+
+    def test_backward_kernels(self):
+        # Every row plan: one block, looped and split, with a transposed upstream gradient.
+        for rows, width in ((1, 1), (3, 33), (2, 8193), (1, 12001), (1, 20000)):
+            with self.subTest(shape=(rows, width)):
+                x = torch.randn((rows, width + 5))[:, :width]
+                r = torch.randn((rows, width + 3))[:, :width]
+                w = torch.randn(width)
+                dy = torch.randn((width, rows)).T
+                y = torch.softmax(x, -1).contiguous()
+                dx = torch.empty_like(y)
+                self.kernels.launch_softmax_backward(y, dy, dx)
+                y64, dy64 = y.double(), dy.double()
+                expected = y64 * (dy64 - (y64 * dy64).sum(-1, keepdim=True))
+                torch.testing.assert_close(
+                    dx, expected.float(), **tolerance("softmax_backward", torch.float32)
+                )
+                dz, dw = torch.empty((rows, width)), torch.empty(width)
+                self.kernels.launch_rmsnorm_backward(x, r, w, dy, dz, dw, 1e-5)
+                x64, r64, w64 = (t.double().requires_grad_() for t in (x, r, w))
+                z = x64 + r64
+                (z * torch.rsqrt(z.square().mean(-1, keepdim=True) + 1e-5) * w64).backward(dy64)
+                tol = tolerance("rmsnorm", torch.float32)
+                torch.testing.assert_close(dz, x64.grad.float(), **tol)
+                torch.testing.assert_close(dw, w64.grad.float(), **tol)
 
     def test_gemm_ragged_tiles(self):
         import triton

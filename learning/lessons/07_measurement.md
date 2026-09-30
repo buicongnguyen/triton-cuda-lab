@@ -40,9 +40,9 @@ For FP16 softmax with shape 1024x1024, the saved runs show:
 
 | Timing mode | PyTorch | Triton, 4 warps | baseline/candidate |
 | --- | ---: | ---: | ---: |
-| Graph replay, inputs warm in L2 | 4.198 us | 2.389 us | 1.76x |
-| Graph replay, L2 flushed before each call | 12.186 us | 9.933 us | 1.23x |
-| Ordinary event-timed wrapper | 11.366 us | 33.835 us | 0.34x |
+| Graph replay, inputs warm in L2 | 4.198 us | 2.423 us | 1.73x |
+| Graph replay, L2 flushed before each call | 15.163 us | 9.455 us | 1.60x |
+| Ordinary event-timed wrapper | 8.363 us | 21.436 us | 0.39x |
 
 These rows answer different questions. The kernel's captured device work can be
 fast while the validated Python wrapper is expensive for tiny calls. The 2 MiB FP16

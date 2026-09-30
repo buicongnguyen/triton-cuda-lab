@@ -88,7 +88,8 @@ and [personal journal](learning/JOURNAL.md) to turn each lesson into evidence yo
 | 2. Row sum | [`_row_sum`](src/kernel_portfolio/triton_kernels.py) | How do reduction order, row width and accumulation dtype matter? |
 | 3. Softmax | [`_softmax`](src/kernel_portfolio/triton_kernels.py) | When does fusion beat eager and compiled PyTorch? |
 | 4. Residual RMSNorm | [`_rmsnorm`](src/kernel_portfolio/triton_kernels.py) | Can an intermediate tensor be eliminated without changing precision semantics? |
-| Wide rows | [`_softmax_looped` and friends](src/kernel_portfolio/triton_kernels.py) | How do rows wider than one block (up to 2^20) stay fast, and when does one program per row stop being enough? |
+| Wide rows | [`_row_plan`, looped and split kernels](src/kernel_portfolio/triton_kernels.py) | How do rows wider than one block (up to 2^20) stay fast, and when must a row be split across programs? |
+| Training | [`_softmax_bwd`, `_rmsnorm_bwd`](src/kernel_portfolio/triton_kernels.py), [autograd registration](src/kernel_portfolio/library.py) | What does a backward kernel need, and how does a custom op train inside `torch.compile`? |
 | 5. GEMM | [`_matmul`](src/kernel_portfolio/triton_kernels.py) | When do grouped tile order and autotuning beat a fixed configuration or cuBLAS? |
 | torch.compile | [`library.py`](src/kernel_portfolio/library.py) | How do custom ops let a compiled model replay many kernels as one CUDA graph? |
 | CUDA comparison | [`kernels.cu`](cuda/kernels.cu) | How do threads, warp shuffles, shared-memory barriers, online statistics and `float4` loads implement the same ideas? |
@@ -114,16 +115,17 @@ kernel-bench --op softmax --dtype float32 --compile --output results/local/softm
 In WSL, after the [WSL setup](docs/SETUP.md#one-time-setup-wsl), the same commands
 apply, with `source .venv/bin/activate` and `KERNEL_REQUIRE_GPU=1 python -m unittest ...`.
 
-The operators are **forward-only**. The plain functions reject gradient-tracking inputs while
-autograd is enabled (parameters work under `torch.no_grad()`), mixed devices,
-unsupported layouts and out-of-range shapes. Row kernels support FP32/FP16/BF16
-and widths 1–1,048,576 (rows wider than 8192 loop over chunks); GEMM supports
-contiguous FP16/BF16 inputs with FP32 accumulation. For use inside `torch.compile`,
-`import kernel_portfolio.library` registers the same kernels as
-`torch.ops.kernel_portfolio.*` custom ops.
-The custom-op dispatcher can accept gradient-tracking inputs but raises on backward;
-use `torch.no_grad()` or `torch.inference_mode()` for model inference.
-Read the full [contracts](docs/SETUP.md#public-operator-contracts) before using them.
+`softmax` and `residual_rmsnorm` **train**: given a gradient-tracking input, they run
+through custom ops whose backward passes are Triton kernels, in eager code and inside
+`torch.compile`. `add`, `row_sum` and `matmul` are forward-only and reject
+gradient-tracking inputs while autograd is enabled (parameters work under
+`torch.no_grad()`). All reject mixed devices, unsupported layouts and out-of-range
+shapes. Row kernels support FP32/FP16/BF16 and widths 1–1,048,576 (rows wider than
+8192 loop over chunks, or split across programs when there are fewer rows than SMs);
+GEMM supports contiguous FP16/BF16 inputs with FP32 accumulation. For use inside
+`torch.compile`, `import kernel_portfolio.library` registers the same kernels as
+`torch.ops.kernel_portfolio.*` custom ops. Read the full
+[contracts](docs/SETUP.md#public-operator-contracts) before using them.
 
 ## Document map
 
@@ -164,15 +166,17 @@ across shapes. CPU CI checks reference math and contracts on Python 3.10 and 3.1
 and runs the Triton kernels in Triton's CPU interpreter; it does not certify GPU
 behavior or performance.
 
-The teaching path's reference solutions passed **40 CPU checks and 34 GPU checks**;
+The teaching path's reference solutions passed **40 CPU checks and 36 GPU checks**;
 the checker has its own regression tests. See [beginner validation](results/learning/VALIDATION.md).
 Reference checks validate the material and do not mark your unfinished exercises as complete.
 
 This is an AI-assisted learning project. Reproduce the experiments and add your
 own explanations before presenting any of it as your own work.
-Full autograd integration, batched attention, non-NVIDIA accelerators, distributed collectives and production model
-integration are future work. The workshops add an explicit softmax VJP and bounded
-single-head streaming attention. Hardware-counter profiling requires permissions
+Autograd for `add`, `row_sum` and `matmul`, double backward, batched attention,
+non-NVIDIA accelerators, distributed collectives and production model integration
+are future work. Softmax and residual RMSNorm train through Triton backward kernels;
+the workshops add an explicit softmax VJP exercise and bounded single-head
+streaming attention. Hardware-counter profiling requires permissions
 unavailable in the local validation environment; that limitation is recorded.
 
 ## License

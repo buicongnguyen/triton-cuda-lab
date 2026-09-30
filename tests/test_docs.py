@@ -23,10 +23,12 @@ DOCS = (
 QUOTED_TIMING = re.compile(r"(?<![\d.])\d+\.\d{3}(?![\d.x])")
 
 
-def recorded_microseconds():
+def recorded_microseconds(archived=False):
+    """Medians in current results, or with archived=True in results/archive only."""
     values = set()
     for path in (ROOT / "results").rglob("*.json"):
-        if "local" in path.parts:
+        parts = path.relative_to(ROOT).parts
+        if "local" in parts or ("archive" in parts) != archived:
             continue
         data = json.loads(path.read_text(encoding="utf-8"))
         cases = data.get("cases") if isinstance(data, dict) else None
@@ -40,17 +42,20 @@ def recorded_microseconds():
 
 class DocNumberTests(unittest.TestCase):
     def test_quoted_timings_exist_in_results(self):
-        recorded = recorded_microseconds()
-        self.assertTrue(recorded, "no saved results found")
+        # A timing must come from the current results. An archived median counts only on
+        # a line that links to the archive, so a stale number cannot pass as current.
+        current, archived = recorded_microseconds(), recorded_microseconds(archived=True)
+        self.assertTrue(current, "no saved results found")
         for doc in DOCS:
-            text = (ROOT / doc).read_text(encoding="utf-8")
-            for number in QUOTED_TIMING.findall(text):
-                with self.subTest(doc=doc, number=number):
-                    self.assertIn(
-                        number,
-                        recorded,
-                        f"{number} us in {doc} matches no saved median; update the doc",
-                    )
+            for line in (ROOT / doc).read_text(encoding="utf-8").splitlines():
+                allowed = current | archived if "archive/" in line else current
+                for number in QUOTED_TIMING.findall(line):
+                    with self.subTest(doc=doc, number=number):
+                        self.assertIn(
+                            number,
+                            allowed,
+                            f"{number} us in {doc} matches no current median; update the doc",
+                        )
 
 
 def sha256(path):

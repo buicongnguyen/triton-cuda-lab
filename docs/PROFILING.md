@@ -70,8 +70,9 @@ control, a copy kernel with its store mask removed on purpose was reported as
 reported 0 errors ([log](../results/windows-triton-memcheck.log)).
 
 For a fast check of every kernel path, including racecheck, use the smoke script. It
-runs each compiled variant once, in every dtype, and compares it with PyTorch;
-under racecheck it finished in under two minutes here, while the full GPU test
+runs each compiled variant once, in every dtype, and compares it with PyTorch,
+including every row plan and the backward kernels;
+under racecheck it finished in about three minutes here, while the full GPU test
 suite takes over an hour:
 
 ```powershell

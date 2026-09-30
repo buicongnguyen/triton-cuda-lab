@@ -20,9 +20,12 @@ def tensor(x: torch.Tensor, name: str, *, ndim: int, gpu: bool = True) -> None:
         raise TypeError(f"{name} must have float16, bfloat16, or float32 dtype")
     # Parameters keep requires_grad=True under no_grad/inference_mode; only reject
     # them when autograd would otherwise record a graph this kernel cannot extend.
+    # (softmax and residual_rmsnorm route gradient-tracking inputs to their custom ops,
+    # whose autograd formula runs this check with gradients disabled.)
     if x.requires_grad and torch.is_grad_enabled():
         raise ValueError(
-            "These operators are forward-only; use torch.no_grad()/inference_mode() or detach"
+            "This operator is forward-only (only softmax and residual_rmsnorm support "
+            "autograd); use torch.no_grad()/inference_mode() or detach"
         )
     # Kernel pointer offsets use signed 32-bit arithmetic. Check the physical span,
     # not just numel: a narrow view can have a very large row stride.

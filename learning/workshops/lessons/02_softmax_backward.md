@@ -55,7 +55,12 @@ The strict row-sum check uses float32 y and allows small numerical error.
 
 For a full training operator you would need to decide whether forward saves
 rounded or higher-precision y, register autograd behavior, test gradient chaining,
-and define higher-order derivative support. Those are separate tasks.
+and define higher-order derivative support. Those are separate tasks. The main
+implementation does the first three for its own softmax; after your attempt,
+compare your kernel with `_softmax_bwd` in
+[triton_kernels.py](../../../src/kernel_portfolio/triton_kernels.py) and its
+registration in [library.py](../../../src/kernel_portfolio/library.py). It saves the
+rounded output, as PyTorch does, and does not support double backward.
 
 ## Measure the fused reduction
 

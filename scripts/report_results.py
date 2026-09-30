@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,11 +44,17 @@ def main():
             for name, result in report["variants"].items():
                 lines.append(f"| {name} | {result['median_ms'] * 1000:.3f} |")
         else:
+            busy = report.get("gpu_utilization_percent") or {}
+            load = "; ".join(
+                f"other GPU load {when}: {statistics.median(values):.0f}%"
+                for when, values in busy.items()
+                if values
+            )
             lines.extend(
                 [
                     f"{report['environment']['gpu']}; timing: {report['settings']['timing']}; "
                     f"cache: {report['settings'].get('cache', 'warm')}; "
-                    f"UTC: {report['timestamp_utc']}.",
+                    f"UTC: {report['timestamp_utc']}." + (f" {load}." if load else ""),
                     "",
                     "| Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |",
                     "| --- | --- | --- | --- | ---: | ---: | ---: |",

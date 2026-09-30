@@ -150,3 +150,19 @@ Not fixed: `tests/test_docs.py` accepts any saved median, archived ones included
 and checks only three-decimal microsecond figures. The non-default-stream check
 cannot prove which stream a kernel used, and an FP32 conversion before softmax
 arithmetic is not observable because Triton already promotes FP16 there.
+
+## Improvements, 2026-09-30
+
+An evaluation of the repository after the fourth review and the follow-up fixes,
+then the gaps the repository itself recorded: operators that could not train, the
+one operator that lost to PyTorch, and measurements that did not say how busy the
+GPU was. Details and numbers are in the [case studies](../CASE_STUDIES.md).
+
+| Improvement | What changed | Measured result and remaining limit |
+| --- | --- | --- |
+| Training support | Softmax and residual RMSNorm gained Triton backward kernels for every row plan; `library.py` registers them with autograd, and `ops.softmax` and `ops.residual_rmsnorm` route gradient-tracking inputs through those custom ops. The RMSNorm backward recomputes each row's inverse RMS and sums the weight gradient in FP32 in a fixed order, without atomics | Gradients match FP64 autograd in all dtypes, with transposed and broadcast upstream gradients and strided inputs; `opcheck` passes its autograd tests and a compiled training step matches eager. A forward+backward step ran 1.6-2.9x faster than PyTorch for softmax and 4.1-10.2x faster than the RMSNorm composition (2.8-8.6x faster than `F.rms_norm`). Eager training through the Python custom ops costs a few hundred microseconds of host time per step; compile the model to remove it. `add`, `row_sum` and `matmul` stay forward-only, and double backward is unsupported |
+| Few wide rows | `_row_plan` splits softmax (and RMSNorm above width 16384) across programs when there are fewer rows than SMs: one kernel writes per-chunk statistics, the next merges them and writes its chunk | Softmax 4 x 32769 went from 0.83x to 2.93x of PyTorch's speed; RMSNorm 4 x 32769 from 1.21x to 5.95x against the eager composition. The rule is conservative: at 128 x 32769, above the SM count, splitting also measured faster but still loops |
+| Contention on record | Each benchmark report stores nvidia-smi's GPU utilization before and after the run and warns above 10%; SUMMARY shows it | Desktop applications kept the GPU 9-25% busy before these runs |
+| Git lock left behind | `revision()` ran `git status`, which takes `.git/index.lock` to refresh the index; on a busy machine a status killed by its timeout left the lock, and the next commit failed. It now passes `--no-optional-locks` (read-only), with a unit test | Found when a test run left a stale lock |
+| Evidence for torch.compile's wide-row results | `scripts/inspect_inductor.py` lists the kernels Inductor generates | At 64 x 131072, Inductor splits each RMSNorm row into four pieces across three launches and softmax into five launches with two separate passes for maximum and sum, having disabled online softmax |
+| Stricter docs test | A quoted timing must match a current result; an archived median counts only on a line that links to the archive | No quoted number relied on the archive |

@@ -1,9 +1,14 @@
 test_add_tails (test_interpreter.InterpreterTests.test_add_tails) ... ok
+test_backward_kernels (test_interpreter.InterpreterTests.test_backward_kernels) ... <venv>/lib/python3.12/site-packages/triton/runtime/interpreter.py:888: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+  scope.set_attr(tensor, "__index__", lambda self: int(self.handle.data))
+<venv>/lib/python3.12/site-packages/triton/runtime/interpreter.py:888: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+  scope.set_attr(tensor, "__index__", lambda self: int(self.handle.data))
+ok
 test_gemm_ragged_tiles (test_interpreter.InterpreterTests.test_gemm_ragged_tiles) ... ok
 test_masked_softmax (test_interpreter.InterpreterTests.test_masked_softmax) ... ok
 test_row_kernels_with_row_gaps (test_interpreter.InterpreterTests.test_row_kernels_with_row_gaps) ... ok
 
 ----------------------------------------------------------------------
-Ran 4 tests in 0.698s
+Ran 5 tests in 1.499s
 
 OK

@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import platform
 import subprocess
+import time
 
 import torch
 
@@ -48,6 +49,33 @@ def describe():
             multiprocessor_count=props.multi_processor_count,
         )
     return info
+
+
+def gpu_utilization(samples=5, interval=0.2):
+    """nvidia-smi's utilization percentages for the first GPU, or None if unavailable.
+
+    Sampled while this process is idle, they show how busy other programs keep the
+    GPU, which explains run-to-run variation on a shared desktop.
+    """
+    values = []
+    for i in range(samples):
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        lines = result.stdout.split()
+        if result.returncode != 0 or not lines or not lines[0].isdigit():
+            return None
+        values.append(int(lines[0]))
+        if i + 1 < samples:
+            time.sleep(interval)
+    return values
 
 
 def main():

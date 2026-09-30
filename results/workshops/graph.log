@@ -1,40 +1,40 @@
 REFERENCE SOLUTIONS (not learner completion)
-strided_softmax      (256, 257)         torch                    3.922 us   1.00x
-strided_softmax      (256, 257)         direct_4w                2.304 us   1.70x
-strided_softmax      (256, 257)         direct_8w                2.355 us   1.67x
-strided_softmax      (256, 257)         copy_then_kernel         3.565 us   1.10x
-strided_softmax      (1024, 1024)       torch                   18.893 us   1.00x
-strided_softmax      (1024, 1024)       direct_4w               15.514 us   1.22x
+strided_softmax      (256, 257)         torch                    3.891 us   1.00x
+strided_softmax      (256, 257)         direct_4w                2.336 us   1.67x
+strided_softmax      (256, 257)         direct_8w                2.355 us   1.65x
+strided_softmax      (256, 257)         copy_then_kernel         3.562 us   1.09x
+strided_softmax      (1024, 1024)       torch                   18.842 us   1.00x
+strided_softmax      (1024, 1024)       direct_4w               15.565 us   1.21x
 strided_softmax      (1024, 1024)       direct_8w               15.309 us   1.23x
-strided_softmax      (1024, 1024)       copy_then_kernel        16.896 us   1.12x
-softmax_backward     (256, 1025)        torch                   13.466 us   1.00x
-softmax_backward     (256, 1025)        fused_vjp                1.792 us   7.51x
-softmax_backward     (1024, 4097)       torch                  160.717 us   1.00x
-softmax_backward     (1024, 4097)       fused_vjp               14.438 us  11.13x
-fused_gemm           (127, 65, 33)      torch                   12.379 us   1.00x
-fused_gemm           (127, 65, 33)      group_1                  2.560 us   4.84x
-fused_gemm           (127, 65, 33)      group_4                  2.560 us   4.84x
-fused_gemm           (127, 65, 33)      group_8                  2.560 us   4.84x
-fused_gemm           (127, 65, 33)      group_4_bm64             3.067 us   4.04x
-fused_gemm           (512, 512, 512)    torch                   31.122 us   1.00x
-fused_gemm           (512, 512, 512)    group_1                  7.117 us   4.37x
-fused_gemm           (512, 512, 512)    group_4                  7.253 us   4.29x
-fused_gemm           (512, 512, 512)    group_8                  7.270 us   4.28x
-fused_gemm           (512, 512, 512)    group_4_bm64             8.755 us   3.55x
-split_softmax        (4, 32769)         torch                    8.691 us   1.00x
-split_softmax        (4, 32769)         chunk_256                4.403 us   1.97x
-split_softmax        (4, 32769)         chunk_1024               4.096 us   2.12x
-split_softmax        (4, 32769)         chunk_4096               4.608 us   1.89x
-split_softmax        (64, 131072)       torch                   25.958 us   1.00x
-split_softmax        (64, 131072)       chunk_256               54.102 us   0.48x
-split_softmax        (64, 131072)       chunk_1024              22.016 us   1.18x
-split_softmax        (64, 131072)       chunk_4096              19.917 us   1.30x
-streaming_attention  (129, 32)          torch                    6.963 us   1.00x
-streaming_attention  (129, 32)          torch_dense_fp32        23.347 us   0.30x
-streaming_attention  (129, 32)          stream_bn32              4.250 us   1.64x
-streaming_attention  (129, 32)          stream_bn64              3.478 us   2.00x
-streaming_attention  (512, 64)          torch                    8.499 us   1.00x
-streaming_attention  (512, 64)          torch_dense_fp32        28.518 us   0.30x
+strided_softmax      (1024, 1024)       copy_then_kernel        16.886 us   1.12x
+softmax_backward     (256, 1025)        torch                   13.501 us   1.00x
+softmax_backward     (256, 1025)        fused_vjp                1.792 us   7.53x
+softmax_backward     (1024, 4097)       torch                  127.885 us   1.00x
+softmax_backward     (1024, 4097)       fused_vjp               14.234 us   8.98x
+fused_gemm           (127, 65, 33)      torch                   12.083 us   1.00x
+fused_gemm           (127, 65, 33)      group_1                  2.336 us   5.17x
+fused_gemm           (127, 65, 33)      group_4                  2.304 us   5.24x
+fused_gemm           (127, 65, 33)      group_8                  2.304 us   5.24x
+fused_gemm           (127, 65, 33)      group_4_bm64             2.765 us   4.37x
+fused_gemm           (512, 512, 512)    torch                   30.046 us   1.00x
+fused_gemm           (512, 512, 512)    group_1                  6.810 us   4.41x
+fused_gemm           (512, 512, 512)    group_4                  6.901 us   4.35x
+fused_gemm           (512, 512, 512)    group_8                  6.942 us   4.33x
+fused_gemm           (512, 512, 512)    group_4_bm64             8.448 us   3.56x
+split_softmax        (4, 32769)         torch                    8.704 us   1.00x
+split_softmax        (4, 32769)         chunk_256                4.230 us   2.06x
+split_softmax        (4, 32769)         chunk_1024               3.891 us   2.24x
+split_softmax        (4, 32769)         chunk_4096               4.454 us   1.95x
+split_softmax        (64, 131072)       torch                   25.856 us   1.00x
+split_softmax        (64, 131072)       chunk_256               54.016 us   0.48x
+split_softmax        (64, 131072)       chunk_1024              21.965 us   1.18x
+split_softmax        (64, 131072)       chunk_4096              19.661 us   1.32x
+streaming_attention  (129, 32)          torch                    6.861 us   1.00x
+streaming_attention  (129, 32)          torch_dense_fp32        22.781 us   0.30x
+streaming_attention  (129, 32)          stream_bn32              3.942 us   1.74x
+streaming_attention  (129, 32)          stream_bn64              3.174 us   2.16x
+streaming_attention  (512, 64)          torch                    8.550 us   1.00x
+streaming_attention  (512, 64)          torch_dense_fp32        28.826 us   0.30x
 streaming_attention  (512, 64)          stream_bn32             12.032 us   0.71x
-streaming_attention  (512, 64)          stream_bn64              8.797 us   0.97x
+streaming_attention  (512, 64)          stream_bn64              8.806 us   0.97x
 Saved results/workshops/graph-fp16.json

@@ -3,8 +3,10 @@
 import contextlib
 import io
 import os
+import subprocess
 import tempfile
 import unittest
+import unittest.mock
 
 import torch
 
@@ -93,6 +95,20 @@ class CpuTests(unittest.TestCase):
                 self.assertEqual(revision(), expected)
             finally:
                 os.chdir(previous)
+
+    def test_revision_takes_no_git_locks(self):
+        # A killed `git status` that had taken .git/index.lock would leave the repo locked.
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "abc\n", "")
+
+        with unittest.mock.patch("kernel_portfolio.benchmark.subprocess.run", fake_run):
+            self.assertEqual(revision(), {"commit": "abc", "dirty": True})
+        self.assertTrue(calls)
+        for args in calls:
+            self.assertEqual(args[:2], ["git", "--no-optional-locks"])
 
     def test_benchmark_rejects_bad_arguments(self):
         # All of these are rejected before any GPU is needed.

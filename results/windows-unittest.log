@@ -5,6 +5,7 @@ test_input_contracts (test_cpu.CpuTests.test_input_contracts) ... ok
 test_no_silent_cpu_fallback (test_cpu.CpuTests.test_no_silent_cpu_fallback) ... ok
 test_parameters_allowed_without_autograd (test_cpu.CpuTests.test_parameters_allowed_without_autograd) ... ok
 test_revision_ignores_working_directory (test_cpu.CpuTests.test_revision_ignores_working_directory) ... ok
+test_revision_takes_no_git_locks (test_cpu.CpuTests.test_revision_takes_no_git_locks) ... ok
 test_rmsnorm_semantics (test_cpu.CpuTests.test_rmsnorm_semantics) ... ok
 test_rows_contract (test_cpu.CpuTests.test_rows_contract) ... ok
 test_stable_softmax (test_cpu.CpuTests.test_stable_softmax) ... ok
@@ -13,35 +14,57 @@ test_quoted_timings_exist_in_results (test_docs.DocNumberTests.test_quoted_timin
 test_archived_results_match_archived_kernels (test_docs.ResultProvenanceTests.test_archived_results_match_archived_kernels) ... ok
 test_course_manifest_matches_course_files (test_docs.ResultProvenanceTests.test_course_manifest_matches_course_files) ... ok
 test_results_were_measured_on_current_sources (test_docs.ResultProvenanceTests.test_results_were_measured_on_current_sources) ... ok
-test_benchmark_cli_modes (test_gpu.BenchmarkSmokeTests.test_benchmark_cli_modes) ... <repo>\.venv-win\Lib\site-packages\torch\jit\_script.py:359: DeprecationWarning: `torch.jit.script_method` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
+test_benchmark_cli_modes (test_gpu.BenchmarkSmokeTests.test_benchmark_cli_modes) ... note: the GPU was 22% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 13% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 24% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 15% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 20% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+<repo>\.venv-win\Lib\site-packages\torch\jit\_script.py:359: DeprecationWarning: `torch.jit.script_method` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
   warnings.warn(
 ok
 test_benchmark_interleaves_a_whole_suite (test_gpu.BenchmarkSmokeTests.test_benchmark_interleaves_a_whole_suite)
-All cases are prepared, then sampled together: every case's inputs must stay ... ok
+All cases are prepared, then sampled together: every case's inputs must stay ... note: the GPU was 15% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+ok
+test_training_benchmark (test_gpu.BenchmarkSmokeTests.test_training_benchmark)
+Forward+backward suites run through autograd in both timing modes. ... ok
 test_workshop_benchmark_cold_cache (test_gpu.BenchmarkSmokeTests.test_workshop_benchmark_cold_cache) ... ok
 test_add_checker_rejects_unmasked_store (test_gpu.CheckerMutationTests.test_add_checker_rejects_unmasked_store) ... ok
 test_gemm_checker_rejects_early_rounding (test_gpu.CheckerMutationTests.test_gemm_checker_rejects_early_rounding) ... ok
 test_compiled_graph_matches_eager (test_gpu.CompileTests.test_compiled_graph_matches_eager) ... ok
+test_compiled_training_step_matches_eager (test_gpu.CompileTests.test_compiled_training_step_matches_eager) ... ok
 test_custom_op_registration (test_gpu.CompileTests.test_custom_op_registration) ... ok
 test_dynamic_row_count (test_gpu.CompileTests.test_dynamic_row_count) ... ok
+test_other_custom_ops_are_forward_only (test_gpu.CompileTests.test_other_custom_ops_are_forward_only) ... ok
 test_add (test_gpu.GpuTests.test_add) ... ok
 test_device_guard (test_gpu.GpuTests.test_device_guard) ... skipped 'Needs two NVIDIA GPUs'
 test_every_gemm_config (test_gpu.GpuTests.test_every_gemm_config) ... ok
 test_extreme_softmax (test_gpu.GpuTests.test_extreme_softmax) ... ok
 test_extreme_softmax_wide_rows (test_gpu.GpuTests.test_extreme_softmax_wide_rows) ... ok
 test_gemm (test_gpu.GpuTests.test_gemm) ... ok
-test_inference_with_parameters (test_gpu.GpuTests.test_inference_with_parameters) ... ok
 test_invalid_gpu_inputs (test_gpu.GpuTests.test_invalid_gpu_inputs) ... ok
 test_masked_softmax (test_gpu.GpuTests.test_masked_softmax)
 -inf scores (attention masks, padding) give probability 0 at every width. ... ok
 test_nondefault_stream (test_gpu.GpuTests.test_nondefault_stream) ... ok
+test_parameters_train_and_infer (test_gpu.GpuTests.test_parameters_train_and_infer)
+A weight Parameter trains under autograd and is accepted under no_grad. ... ok
 test_rmsnorm (test_gpu.GpuTests.test_rmsnorm) ... ok
+test_rmsnorm_backward (test_gpu.GpuTests.test_rmsnorm_backward)
+dx, dresidual and dweight match FP64 autograd; dweight is deterministic. ... ok
 test_row_ops (test_gpu.GpuTests.test_row_ops) ... ok
+test_softmax_backward (test_gpu.GpuTests.test_softmax_backward)
+Autograd through ops.softmax matches FP64 autograd for every row plan. ... ok
 test_varying_sizes_reuse_compiled_kernels (test_gpu.GpuTests.test_varying_sizes_reuse_compiled_kernels)
 Per-request sizes (length, rows, stride, GEMM M) must not recompile or retune. ... ok
 setUpClass (test_interpreter.InterpreterTests) ... skipped 'Set TRITON_INTERPRET=1 with Triton installed'
+test_learner_edits_leave_reference_checks_green_but_kernel_edits_fail (test_workflows.ProvenanceWorkflowTests.test_learner_edits_leave_reference_checks_green_but_kernel_edits_fail) ... ok
+test_new_reports_select_the_requested_implementation (test_workflows.ProvenanceWorkflowTests.test_new_reports_select_the_requested_implementation) ... ok
+test_saved_source_snapshot_preserves_original_hash (test_workflows.ProvenanceWorkflowTests.test_saved_source_snapshot_preserves_original_hash) ... ok
+test_generated_build_can_be_rebuilt (test_workflows.SiteBuildTests.test_generated_build_can_be_rebuilt) ... ok
+test_repo_root_is_rejected_even_with_marker (test_workflows.SiteBuildTests.test_repo_root_is_rejected_even_with_marker) ... ok
+test_unrelated_mkdocs_sources_are_preserved (test_workflows.SiteBuildTests.test_unrelated_mkdocs_sources_are_preserved) ... ok
+test_wrong_marker_is_not_authorization (test_workflows.SiteBuildTests.test_wrong_marker_is_not_authorization) ... ok
 
 ----------------------------------------------------------------------
-Ran 36 tests in 28.250s
+Ran 49 tests in 47.033s
 
 OK (skipped=2)

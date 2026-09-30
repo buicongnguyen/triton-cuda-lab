@@ -9,8 +9,11 @@ graph, which removes the per-call Python launch cost measured in docs/CASE_STUDI
     import kernel_portfolio.library  # registers torch.ops.kernel_portfolio.*
     y = torch.ops.kernel_portfolio.softmax(x)
 
-Forward-only like kernel_portfolio.ops: no autograd formula is registered. Importing
-this module requires Triton.
+softmax and residual_rmsnorm have autograd formulas whose backward passes are the
+custom ops softmax_backward and residual_rmsnorm_backward, so a compiled training
+step traces both directions. add, row_sum and matmul have no autograd formula: they
+accept gradient-tracking inputs but raise if backward reaches them. Double backward
+is not supported. Importing this module requires Triton.
 """
 
 import torch
@@ -47,6 +50,28 @@ def softmax(x: torch.Tensor, num_warps: int = 4) -> torch.Tensor:
     return out
 
 
+@triton_op("kernel_portfolio::softmax_backward", mutates_args={})
+def softmax_backward(grad: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    dx = ops._softmax_backward_out(grad, y)
+    if y.shape[0]:
+        with ops._on(y.device):
+            k.launch_softmax_backward(y, grad, dx, wrap=wrap_triton)
+    return dx
+
+
+def _softmax_setup(ctx, inputs, output):
+    # The output is all the gradient needs: dx = y * (grad - sum(y * grad)).
+    ctx.save_for_backward(output)
+
+
+def _softmax_grad(ctx, grad):
+    (y,) = ctx.saved_tensors
+    return torch.ops.kernel_portfolio.softmax_backward(grad, y), None
+
+
+softmax.register_autograd(_softmax_grad, setup_context=_softmax_setup)
+
+
 @triton_op("kernel_portfolio::residual_rmsnorm", mutates_args={})
 def residual_rmsnorm(
     x: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor, eps: float = 1e-5
@@ -56,6 +81,41 @@ def residual_rmsnorm(
         with ops._on(x.device):
             k.launch_rmsnorm(x, residual, weight, out, eps, wrap=wrap_triton)
     return out
+
+
+@triton_op("kernel_portfolio::residual_rmsnorm_backward", mutates_args={})
+def residual_rmsnorm_backward(
+    grad: torch.Tensor,
+    x: torch.Tensor,
+    residual: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    dx, dweight = ops._rmsnorm_backward_out(grad, x, residual, weight, eps)
+    if x.shape[0]:
+        with ops._on(x.device):
+            k.launch_rmsnorm_backward(x, residual, weight, grad, dx, dweight, eps, wrap=wrap_triton)
+    return dx, dweight
+
+
+def _rmsnorm_setup(ctx, inputs, output):
+    # Save the inputs, not the normalized output: the backward kernels recompute the
+    # per-row inverse RMS, which costs one extra read instead of extra saved memory.
+    x, residual, weight, eps = inputs
+    ctx.save_for_backward(x, residual, weight)
+    ctx.eps = eps
+
+
+def _rmsnorm_grad(ctx, grad):
+    x, residual, weight = ctx.saved_tensors
+    dx, dweight = torch.ops.kernel_portfolio.residual_rmsnorm_backward(
+        grad, x, residual, weight, ctx.eps
+    )
+    # x + residual enters the normalization, so both receive dx (as for a + b).
+    return dx, dx, dweight, None
+
+
+residual_rmsnorm.register_autograd(_rmsnorm_grad, setup_context=_rmsnorm_setup)
 
 
 @triton_op("kernel_portfolio::matmul", mutates_args={})

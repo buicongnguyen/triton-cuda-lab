@@ -17,6 +17,8 @@ kernel-bench --op rmsnorm --compile --output results/local/norm-compiled.json
 kernel-bench --op matmul --dtype bfloat16 --output results/local/gemm-bf16.json
 # Separate dispatch-sensitive measurement; do not mix it with graph numbers.
 kernel-bench --op softmax --timing events --output results/local/softmax-events.json
+# Forward + backward through autograd for softmax and residual RMSNorm.
+kernel-bench --op training --compile --output results/local/training.json
 ```
 
 Every variant passes an independent double-precision oracle before timing. Random
@@ -28,6 +30,14 @@ eager kernels, so a large ratio against it mostly counts launches.
 `F.rms_norm`. `--compile` adds Inductor's fused version and is necessary before
 claiming a manual-fusion advantage over a compiler. GEMM compares to `torch.mm` with reduced-precision
 reduction disabled. Input/output conversion and tolerances are recorded by code.
+
+The training suites (`--op training`, or `softmax_train` and `rmsnorm_train` alone)
+time one forward and one backward pass through autograd per call and check the
+input gradient against a closed-form FP64 gradient. The whole step is timed because
+a CUDA graph can only replay a backward pass whose forward was captured with it.
+They run separately from `--op all`: every prepared case stays in GPU memory until
+sampling ends, and training cases also keep activations for backward. With
+`--compile`, the PyTorch forward is compiled and its backward comes from AOTAutograd.
 
 The default captures 30 invocations per CUDA graph after correctness, JIT,
 autotuning and five warmup calls. Each of nine samples times a graph replay using
@@ -72,7 +82,10 @@ isolated kernel duration. Neither mode includes host/device input transfers.
 
 JSON includes all samples, median/min/max, max absolute error, logical I/O bytes,
 versions, GPU, seed, timing settings, Git state and Python source hashes. Source
-hashes identify the implementation even before a first commit exists. No speedup
+hashes identify the implementation even before a first commit exists.
+`gpu_utilization_percent` records nvidia-smi's GPU utilization over about a second
+before the run starts and again after it ends, while this process is idle: the
+load other programs put on the GPU. The benchmark warns when it is 10% or more. No speedup
 threshold is asserted; regressions are valid measurements. All displayed ratios
 use the PyTorch eager median for that same case and timing mode.
 
@@ -91,10 +104,13 @@ count is used for every variant, including compositions with extra intermediates
 Add counts two reads and one write. Softmax counts one read and one write.
 RMSNorm counts two activation reads, one write, and one weight vector, assuming
 ideal weight reuse. GEMM's TFLOP/s uses `2*M*N*K`; its I/O count assumes each
-matrix is read once. Cache reuse and actual traffic require profiling counters.
+matrix is read once. A softmax training step counts five tensor passes (forward:
+read x, write y; backward: read y and the gradient, write dx); an RMSNorm step
+counts seven, plus three weight-sized vectors. Cache reuse and actual traffic require profiling counters.
 
-Standalone CUDA JSON uses native Windows CUDA events over 50 launches and nine
-samples. It preallocates outputs, tests against CPU references, and reports FP32.
+Standalone CUDA JSON uses native Windows CUDA events over 50 launches and fifteen
+samples, taking one sample of every kernel per round in rotating order. It
+preallocates outputs, tests against CPU references, and reports FP32.
 Its serial softmax is a pedagogical parallelization baseline. Do not compare its
 absolute times directly against WSL Triton CUDA-graph numbers or call that ratio
 a framework speedup.

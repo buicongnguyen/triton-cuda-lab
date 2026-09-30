@@ -7,7 +7,7 @@
 The portfolio's `_softmax_looped` handles wide rows with one program per row that
 loops over chunks. That works well with many rows, but with only a few rows it
 leaves most of the GPU idle; see the
-[case study](../../../docs/CASE_STUDIES.md#wide-rows-one-looped-program-per-row).
+[case study](../../../docs/CASE_STUDIES.md#wide-rows-loop-in-one-program-or-split-across-programs).
 Splitting each row across programs, as here, is the answer for that case.
 Increasing that cap alone can increase register pressure and resource use. With
 only a few rows it also exposes few independent programs. Partitioning a row
@@ -78,6 +78,14 @@ Smaller C exposes more programs but increases partial count and merge work.
 Larger C reduces partials but asks each program to reduce more values. Compare
 4x32769 and 64x131072 against `torch.softmax`. Three launches can lose badly on
 small workloads; a valid improvement may be support for a shape, not a speedup.
+
+The main implementation now uses this idea for softmax and RMSNorm when a GPU has
+more SMs than rows, with one change: there is no separate merge kernel, because
+every normalizing program merges its row's partial statistics itself. After your
+attempt, compare with `_softmax_split_stats` and `_softmax_split_normalize` in
+[triton_kernels.py](../../../src/kernel_portfolio/triton_kernels.py); the
+[case study](../../../docs/CASE_STUDIES.md#wide-rows-loop-in-one-program-or-split-across-programs)
+measures when it pays.
 
 **Done when:** explain the launch boundaries, derive the scratch size, show why
 the tail chunk is nonempty, and retain the losing chunk choices in your report.

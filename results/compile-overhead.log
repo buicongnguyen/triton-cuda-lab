@@ -1,13 +1,13 @@
 FP16 rows of width 127; host microseconds per call
 One softmax:
-  torch.softmax, eager                         median     9.17  min     8.39
-  ops.softmax, eager wrapper                   median    26.24  min    23.46
-  torch.ops custom op, eager                   median    51.37  min    43.31
-  custom op, torch.compile                     median    40.62  min    34.26
-  custom op, torch.compile reduce-overhead     median    54.88  min    54.08
+  torch.softmax, eager                         median     7.23  min     7.14
+  ops.softmax, eager wrapper                   median    22.02  min    21.15
+  torch.ops custom op, eager                   median    39.93  min    37.85
+  custom op, torch.compile                     median    29.82  min    29.00
+  custom op, torch.compile reduce-overhead     median    46.54  min    45.30
 16-op chain (8 x residual RMSNorm + softmax):
-  ops.* eager wrappers                         median   533.59  min   443.24
-  custom ops, torch.compile                    median   202.91  min   169.54
-  custom ops, torch.compile reduce-overhead    median    69.52  min    57.57
+  ops.* eager wrappers                         median   406.43  min   397.66
+  custom ops, torch.compile                    median   155.14  min   148.28
+  custom ops, torch.compile reduce-overhead    median    51.38  min    48.90
 dynamo graphs captured: {'calls_captured': 34, 'unique_graphs': 4}
 cudagraph skips: none

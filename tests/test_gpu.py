@@ -34,8 +34,10 @@ class _GpuCase(unittest.TestCase):
             raise unittest.SkipTest("NVIDIA CUDA and Triton required")
         torch.manual_seed(2026)
         cls.dtypes = (torch.float32, torch.float16, torch.bfloat16)
-        # Looped row kernels switch to narrower chunks at two rows per SM; test both sides.
-        cls.many_rows = 2 * torch.cuda.get_device_properties(0).multi_processor_count
+        # Wide rows split across programs below one row per SM, loop in 8192-wide chunks
+        # up to two rows per SM, and in 2048-wide chunks beyond that: test every side.
+        sms = torch.cuda.get_device_properties(0).multi_processor_count
+        cls.sm_rows, cls.many_rows = sms, 2 * sms
 
 
 class GpuTests(_GpuCase):
@@ -64,6 +66,7 @@ class GpuTests(_GpuCase):
                 (3, 8193),
                 (2, 32769),
                 (1, 131072),
+                (self.sm_rows, 8193),
                 (self.many_rows, 8195),
             ):
                 for padded in (False, True):
@@ -120,7 +123,14 @@ class GpuTests(_GpuCase):
     def test_masked_softmax(self):
         """-inf scores (attention masks, padding) give probability 0 at every width."""
         for dtype in self.dtypes:
-            for rows, width in ((3, 33), (3, 4097), (3, 8193), (self.many_rows, 8195), (2, 32769)):
+            for rows, width in (
+                (3, 33),
+                (3, 4097),
+                (3, 8193),
+                (self.sm_rows, 8193),
+                (self.many_rows, 8195),
+                (2, 32769),
+            ):
                 with self.subTest(dtype=dtype, shape=(rows, width)):
                     x = torch.randn((rows, width), device="cuda", dtype=dtype)
                     # A masked prefix longer than one chunk, plus scattered masked entries.
@@ -133,10 +143,10 @@ class GpuTests(_GpuCase):
                         torch.softmax(x.double(), -1).to(dtype),
                         **tolerance("softmax", dtype),
                     )
-            for width in (33, 8193):
-                with self.subTest(dtype=dtype, fully_masked=width):
+            for rows, width in ((2, 33), (2, 8193), (self.sm_rows, 8193)):
+                with self.subTest(dtype=dtype, fully_masked=(rows, width)):
                     # No finite score: NaN, exactly as torch.softmax.
-                    x = torch.full((2, width), float("-inf"), device="cuda", dtype=dtype)
+                    x = torch.full((rows, width), float("-inf"), device="cuda", dtype=dtype)
                     self.assertTrue(torch.isnan(ops.softmax(x)).all().item())
 
     def test_rmsnorm(self):
@@ -150,9 +160,11 @@ class GpuTests(_GpuCase):
                 (2, 8192),
                 (3, 8193),
                 (2, 32769),
+                (4, 20000),
+                (self.sm_rows, 8193),
                 (self.many_rows, 8195),
             ):
-                with self.subTest(dtype=dtype, width=width):
+                with self.subTest(dtype=dtype, shape=(rows, width)):
                     x = torch.randn((rows, width + 3), device="cuda", dtype=dtype)[:, :width]
                     r = torch.randn((rows, width + 5), device="cuda", dtype=dtype)[:, :width]
                     w = torch.randn(width, device="cuda", dtype=dtype)
@@ -167,6 +179,78 @@ class GpuTests(_GpuCase):
                         torch.testing.assert_close(a, b, atol=0, rtol=0)
             x = torch.zeros((3, 33), device="cuda", dtype=dtype)
             torch.testing.assert_close(ops.residual_rmsnorm(x, x, torch.ones_like(x[0])), x)
+
+    def grad_shapes(self):
+        # One shape or more per row plan: single block, split, both looped chunkings.
+        return (
+            (0, 33),
+            (1, 1),
+            (7, 33),
+            (3, 4097),
+            (3, 8193),
+            (2, 32769),
+            (1, 131072),
+            (4, 20000),
+            (self.sm_rows, 8193),
+            (self.many_rows, 8195),
+        )
+
+    @staticmethod
+    def upstream(rows, width, dtype, layout):
+        """Upstream gradients as autograd delivers them: dense, transposed or broadcast."""
+        if layout == "transposed":
+            return torch.randn((width, rows), device="cuda", dtype=dtype).T
+        if layout == "expanded":
+            return torch.randn((1, width), device="cuda", dtype=dtype).expand(rows, width)
+        return torch.randn((rows, width), device="cuda", dtype=dtype)
+
+    def test_softmax_backward(self):
+        """Autograd through ops.softmax matches FP64 autograd for every row plan."""
+        for dtype in self.dtypes:
+            for rows, width in self.grad_shapes():
+                for layout in ("contiguous", "transposed", "expanded"):
+                    with self.subTest(dtype=dtype, shape=(rows, width), grad=layout):
+                        x = torch.randn((rows, width), device="cuda", dtype=dtype)
+                        dy = self.upstream(rows, width, dtype, layout)
+                        leaf = x.clone().requires_grad_()
+                        ops.softmax(leaf).backward(dy)
+                        x64 = x.double().requires_grad_()
+                        torch.softmax(x64, -1).backward(dy.double())
+                        torch.testing.assert_close(
+                            leaf.grad, x64.grad.to(dtype), **tolerance("softmax_backward", dtype)
+                        )
+
+    def test_rmsnorm_backward(self):
+        """dx, dresidual and dweight match FP64 autograd; dweight is deterministic."""
+        for dtype in self.dtypes:
+            tol = tolerance("rmsnorm", dtype)
+            for rows, width in self.grad_shapes():
+                for layout in ("contiguous", "transposed"):
+                    with self.subTest(dtype=dtype, shape=(rows, width), grad=layout):
+                        # Views with row gaps: the padding must receive zero gradient.
+                        bx = torch.randn((rows, width + 3), device="cuda", dtype=dtype)
+                        br = torch.randn((rows, width + 5), device="cuda", dtype=dtype)
+                        w = torch.randn(width, device="cuda", dtype=dtype)
+                        bx, br, w = (t.requires_grad_() for t in (bx, br, w))
+                        x, r = bx[:, :width], br[:, :width]
+                        dy = self.upstream(rows, width, dtype, layout)
+                        ops.residual_rmsnorm(x, r, w).backward(dy)
+                        x64, r64, w64 = (t.detach().double().requires_grad_() for t in (x, r, w))
+                        z = x64 + r64
+                        rms = torch.rsqrt(z.square().mean(-1, keepdim=True) + 1e-5)
+                        (z * rms * w64).backward(dy.double())
+                        torch.testing.assert_close(bx.grad[:, :width], x64.grad.to(dtype), **tol)
+                        torch.testing.assert_close(br.grad[:, :width], r64.grad.to(dtype), **tol)
+                        # dw adds one FP32 term per row; where the terms cancel, its absolute
+                        # rounding error grows like sqrt(rows) times one term's.
+                        dw_tol = {**tol, "atol": tol["atol"] * max(1.0, rows**0.5)}
+                        torch.testing.assert_close(w.grad, w64.grad.to(dtype), **dw_tol)
+                        self.assertEqual(bx.grad[:, width:].abs().sum().item(), 0)
+            x = torch.randn((self.many_rows, 4097), device="cuda", dtype=dtype)
+            args = (torch.randn_like(x), x, torch.randn_like(x), torch.randn_like(x[0]))
+            first, second = (ops.residual_rmsnorm_backward(*args) for _ in range(2))
+            for a, b in zip(first, second):
+                torch.testing.assert_close(a, b, atol=0, rtol=0)
 
     def test_gemm(self):
         for dtype in (torch.float16, torch.bfloat16):
@@ -232,7 +316,10 @@ class GpuTests(_GpuCase):
             lambda: ops.softmax(x[:, ::2]),
             lambda: ops.softmax(torch.ones((1, (1 << 20) + 1), device="cuda")),
             lambda: ops.softmax(x, num_warps=3),
-            lambda: ops.softmax(x.clone().requires_grad_()),
+            lambda: ops.row_sum(x.clone().requires_grad_()),
+            lambda: ops.softmax_backward(x, x.T.contiguous().T),
+            lambda: ops.softmax_backward(x[:, :2], x),
+            lambda: ops.residual_rmsnorm_backward(x[:1], x, x, x[0]),
             lambda: ops.residual_rmsnorm(x, x, x[0], eps=0),
             lambda: ops.residual_rmsnorm(x, x, x[0, :2]),
             lambda: ops.add(x[0], x[0, :2]),
@@ -243,15 +330,24 @@ class GpuTests(_GpuCase):
         with self.assertRaises(TypeError):
             ops.matmul(x, x.T.contiguous())
 
-    def test_inference_with_parameters(self):
+    def test_parameters_train_and_infer(self):
+        """A weight Parameter trains under autograd and is accepted under no_grad."""
         x = torch.randn((3, 33), device="cuda")
         weight = torch.nn.Parameter(torch.randn(33, device="cuda"))
         expected = references.residual_rmsnorm(x, x, weight.detach())
         with torch.no_grad():
             actual = ops.residual_rmsnorm(x, x, weight)
+        self.assertFalse(actual.requires_grad)
         torch.testing.assert_close(actual, expected, **tolerance("rmsnorm", torch.float32))
+        ops.residual_rmsnorm(x, x, weight).square().sum().backward()
+        w64 = weight.detach().double().requires_grad_()
+        z = 2 * x.double()
+        (z * torch.rsqrt(z.square().mean(-1, keepdim=True) + 1e-5) * w64).square().sum().backward()
+        torch.testing.assert_close(
+            weight.grad, w64.grad.float(), **tolerance("rmsnorm", torch.float32)
+        )
         with self.assertRaisesRegex(ValueError, "forward-only"):
-            ops.residual_rmsnorm(x, x, weight)
+            ops.row_sum(x.clone().requires_grad_())
 
     def test_varying_sizes_reuse_compiled_kernels(self):
         """Per-request sizes (length, rows, stride, GEMM M) must not recompile or retune."""
@@ -356,6 +452,29 @@ class BenchmarkSmokeTests(_GpuCase):
                 self.assertEqual("triton" in case["variants"], wide)
                 self.assertEqual("triton_8w" in case["variants"], not wide)
 
+    def test_training_benchmark(self):
+        """Forward+backward suites run through autograd in both timing modes."""
+        from kernel_portfolio import benchmark
+
+        expected = {
+            "softmax_train": {"torch", "triton"},
+            "rmsnorm_train": {"torch", "torch_rms_norm", "triton"},
+        }
+        timings = ["events"] + (["graph"] if GRAPHS_OK else [])
+        with tempfile.TemporaryDirectory() as directory:
+            for op, variants in expected.items():
+                for timing in timings:
+                    with self.subTest(op=op, timing=timing):
+                        path = Path(directory) / f"{op}-{timing}.json"
+                        argv = ["--op", op, "--shape", "8", "33", "--samples", "3"]
+                        argv += ["--iterations", "2", "--timing", timing, "--output", str(path)]
+                        quiet = io.StringIO()
+                        with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
+                            benchmark.main(argv)
+                        report = json.loads(path.read_text(encoding="utf-8"))
+                        self.assertEqual(set(report["cases"][0]["variants"]), variants)
+                        self.assertIn("before", report["gpu_utilization_percent"])
+
     def test_workshop_benchmark_cold_cache(self):
         from learning.provenance import measured_workshop_hashes
         from learning.workshops import benchmark
@@ -392,22 +511,51 @@ class CompileTests(_GpuCase):
 
     def test_custom_op_registration(self):
         ns = torch.ops.kernel_portfolio
-        for op, args in (
-            (ns.softmax.default, (self.x,)),
-            (ns.row_sum.default, (self.x,)),
-            (ns.residual_rmsnorm.default, (self.x, self.r, self.w, 1e-5)),
-            (ns.matmul.default, (self.a, self.b)),
-            (ns.add.default, (self.x[0], self.r[0])),
+        plain = ("test_schema", "test_faketensor")
+        trained = (*plain, "test_autograd_registration", "test_aot_dispatch_dynamic")
+        wide = torch.randn((3, 20000), device="cuda", dtype=torch.float16)
+        grads = [t.detach().requires_grad_() for t in (self.x, self.r, self.w, wide)]
+        y = torch.softmax(self.x.float(), -1).half()
+        for op, args, utils in (
+            (ns.softmax.default, (grads[0],), trained),
+            (ns.softmax.default, (grads[3],), trained),
+            (ns.residual_rmsnorm.default, (*grads[:3], 1e-5), trained),
+            (ns.softmax_backward.default, (torch.randn_like(self.x), y), plain),
+            (
+                ns.residual_rmsnorm_backward.default,
+                (torch.randn_like(self.x), self.x, self.r, self.w, 1e-5),
+                plain,
+            ),
+            (ns.row_sum.default, (self.x,), plain),
+            (ns.matmul.default, (self.a, self.b), plain),
+            (ns.add.default, (self.x[0], self.r[0]), plain),
         ):
-            with self.subTest(op=str(op)):
-                torch.library.opcheck(op, args, test_utils=("test_schema", "test_faketensor"))
+            with self.subTest(op=str(op), width=args[0].shape[-1]):
+                torch.library.opcheck(op, args, test_utils=utils)
 
-    def test_custom_ops_are_forward_only(self):
+    def test_compiled_training_step_matches_eager(self):
+        ns = torch.ops.kernel_portfolio
+
+        def step(x, r, w):
+            y = ns.softmax(ns.residual_rmsnorm(x, r, w, 1e-5) * 2)
+            return (y.float() * torch.arange(y.shape[1], device=y.device)).sum()
+
+        results = []
+        for mode in ("eager", "compiled", "dynamic"):
+            leaves = [t.detach().clone().requires_grad_() for t in (self.x, self.r, self.w)]
+            fn = step if mode == "eager" else torch.compile(step, dynamic=mode == "dynamic")
+            loss = fn(*leaves)
+            loss.backward()
+            results.append((loss.detach(), *(t.grad for t in leaves)))
+        for mode, got in zip(("compiled", "dynamic"), results[1:]):
+            with self.subTest(mode=mode):
+                for a, b in zip(got, results[0]):
+                    torch.testing.assert_close(a, b)
+
+    def test_other_custom_ops_are_forward_only(self):
         ns = torch.ops.kernel_portfolio
         for op, args in (
-            (ns.softmax, (self.x,)),
             (ns.row_sum, (self.x,)),
-            (ns.residual_rmsnorm, (self.x, self.r, self.w)),
             (ns.matmul, (self.a, self.b)),
             (ns.add, (self.x[0], self.r[0])),
         ):

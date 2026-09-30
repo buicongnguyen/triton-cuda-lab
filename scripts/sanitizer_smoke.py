@@ -2,10 +2,12 @@
 
 The full GPU test suite takes over an hour under racecheck. This script covers each
 compiled kernel variant on a modest shape, in every supported dtype (each dtype is a
-separate compilation): add, the single-block and both looped chunkings of each row
-kernel (softmax also with -inf masked entries), the fixed GEMM and every autotuning
-configuration in FP16 and BF16, and one call through the torch.compile custom ops.
-Results are compared with PyTorch.
+separate compilation): add; every row plan of each row kernel (one block, split
+across programs, and both looped chunkings), with softmax also given -inf masked
+entries; the softmax and residual RMSNorm backward kernels on every plan, including
+the weight-gradient kernel; the fixed GEMM and every autotuning configuration in FP16
+and BF16; and one call through the torch.compile custom ops. Results are compared
+with PyTorch.
 
     compute-sanitizer --tool racecheck --error-exitcode 1 python scripts/sanitizer_smoke.py
 """
@@ -27,10 +29,12 @@ def check(label, actual, expected, op):
 
 
 def row_kernels(dtype):
+    sms = k._sm_count(0)
     rows_per_path = {
         "single block": (7, 33),
-        "looped, few rows (8192-wide chunks)": (3, 8193),
-        "looped, many rows (2048-wide chunks)": (2 * k._sm_count(0), 8193),
+        "split (few wide rows; row sum loops)": (3, 20000),
+        "looped, 8192-wide chunks": (sms, 8193),
+        "looped, 2048-wide chunks": (2 * sms, 8193),
     }
     for label, (rows, width) in rows_per_path.items():
         label = f"{label}, {dtype}"
@@ -38,8 +42,8 @@ def row_kernels(dtype):
         r = torch.randn_like(x)
         w = torch.randn(width, device="cuda", dtype=dtype)
         check(f"row_sum, {label}", ops.row_sum(x), x.double().sum(-1).float(), "row_sum")
-        expected = torch.softmax(x.double(), -1).to(dtype)
-        check(f"softmax, {label}", ops.softmax(x), expected, "softmax")
+        y = ops.softmax(x)
+        check(f"softmax, {label}", y, torch.softmax(x.double(), -1).to(dtype), "softmax")
         masked = x.clone()
         masked[:, : width // 3] = float("-inf")
         check(
@@ -54,6 +58,25 @@ def row_kernels(dtype):
             references.residual_rmsnorm(x, r, w),
             "rmsnorm",
         )
+        dy = torch.randn((width, rows), device="cuda", dtype=dtype).T
+        y64, dy64 = y.double(), dy.double()
+        check(
+            f"softmax backward, {label}",
+            ops.softmax_backward(dy, y),
+            (y64 * (dy64 - (y64 * dy64).sum(-1, keepdim=True))).to(dtype),
+            "softmax_backward",
+        )
+        dx, dw = ops.residual_rmsnorm_backward(dy, x, r, w)
+        x64, r64, w64 = (t.double().requires_grad_() for t in (x, r, w))
+        z = x64 + r64
+        (z * torch.rsqrt(z.square().mean(-1, keepdim=True) + 1e-5) * w64).backward(dy64)
+        check(f"rmsnorm backward dx, {label}", dx, x64.grad.to(dtype), "rmsnorm")
+        # The weight gradient sums one term per row; see tests/test_gpu.py.
+        tol = tolerance("rmsnorm", dtype)
+        torch.testing.assert_close(
+            dw, w64.grad.to(dtype), rtol=tol["rtol"], atol=tol["atol"] * rows**0.5
+        )
+        print(f"ok  rmsnorm backward dweight, {label}")
 
 
 def gemm(dtype):

@@ -1,8 +1,12 @@
-"""Validated GPU entry points. No CPU fallback, hidden copies, or autograd support.
+"""Validated GPU entry points. No CPU fallback or hidden copies.
 
 Each operator is split into a `_*_out` helper (validation and output allocation) and
 a launch. kernel_portfolio.library reuses the helpers for its torch.compile-friendly
 custom ops, so both entry points enforce the same contracts.
+
+softmax and residual_rmsnorm support autograd: when an input tracks gradients they
+run through the custom ops, which record Triton backward kernels. add, row_sum and
+matmul are forward-only and reject gradient-tracking inputs.
 """
 
 import contextlib
@@ -28,6 +32,20 @@ def _on(device: torch.device):
     if device.index == torch.cuda.current_device():
         return contextlib.nullcontext()
     return torch.cuda.device(device)
+
+
+def _tracks_grad(*tensors) -> bool:
+    return torch.is_grad_enabled() and any(
+        isinstance(t, torch.Tensor) and t.requires_grad for t in tensors
+    )
+
+
+def _custom_ops():
+    """torch.ops.kernel_portfolio, registered (with autograd) on first use."""
+    _backend()  # the same clear error as the plain path when Triton is missing
+    from . import library  # noqa: F401
+
+    return torch.ops.kernel_portfolio
 
 
 def _add_out(x: torch.Tensor, y: torch.Tensor, block_size: int) -> torch.Tensor:
@@ -74,17 +92,41 @@ def _softmax_out(x: torch.Tensor, num_warps: int) -> torch.Tensor:
 
 
 def softmax(x: torch.Tensor, *, num_warps: int = 4) -> torch.Tensor:
-    """Stable row softmax; width 1..2**20; same dtype output.
+    """Stable row softmax; width 1..2**20; same dtype output; supports autograd.
 
     Scores are finite or -inf (masked entries get probability 0). A row with no
     finite score returns NaN, as torch.softmax does. num_warps is an experimental knob
     for rows up to 8192 wide; wider rows choose their own chunking and warps.
     """
+    if _tracks_grad(x):
+        return _custom_ops().softmax(x, num_warps)
     out = _softmax_out(x, num_warps)
     if x.shape[0]:
         with _on(x.device):
             _backend().launch_softmax(x, out, num_warps)
     return out
+
+
+def _softmax_backward_out(grad: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    c.tensor(grad, "grad", ndim=2)
+    c.tensor(y, "y", ndim=2)
+    c.same(grad, y)
+    c.contiguous(y)
+    c.rows(y)
+    return torch.empty(y.shape, device=y.device, dtype=y.dtype)
+
+
+def softmax_backward(grad: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Input gradient of softmax: y * (grad - sum(y * grad)) per row.
+
+    y is the contiguous softmax output; grad may have any strides. This is the kernel
+    autograd runs for softmax, exposed for explicit use and measurement.
+    """
+    dx = _softmax_backward_out(grad, y)
+    if y.shape[0]:
+        with _on(y.device):
+            _backend().launch_softmax_backward(y, grad, dx)
+    return dx
 
 
 def _rmsnorm_out(
@@ -107,12 +149,48 @@ def _rmsnorm_out(
 def residual_rmsnorm(
     x: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor, eps: float = 1e-5
 ) -> torch.Tensor:
-    """RMSNorm(x.float() + residual.float()) * weight, rounded once to x.dtype."""
+    """RMSNorm(x.float() + residual.float()) * weight, rounded once to x.dtype.
+
+    Supports autograd for x, residual and weight.
+    """
+    if _tracks_grad(x, residual, weight):
+        return _custom_ops().residual_rmsnorm(x, residual, weight, eps)
     out = _rmsnorm_out(x, residual, weight, eps)
     if x.shape[0]:
         with _on(x.device):
             _backend().launch_rmsnorm(x, residual, weight, out, eps)
     return out
+
+
+def _rmsnorm_backward_out(
+    grad: torch.Tensor, x: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor, eps: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    dx = _rmsnorm_out(x, residual, weight, eps)
+    c.tensor(grad, "grad", ndim=2)
+    c.same(grad, x)
+    # With no rows, the weight gradient is an empty sum.
+    dweight = (torch.zeros_like if x.shape[0] == 0 else torch.empty_like)(weight)
+    return dx, dweight
+
+
+def residual_rmsnorm_backward(
+    grad: torch.Tensor,
+    x: torch.Tensor,
+    residual: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float = 1e-5,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """(input gradient, weight gradient) of residual_rmsnorm for upstream grad.
+
+    x and residual receive the same input gradient. grad may have any strides. The
+    weight gradient is summed over rows in FP32 in a fixed order, so it is
+    deterministic, then rounded to the weight's dtype.
+    """
+    dx, dweight = _rmsnorm_backward_out(grad, x, residual, weight, eps)
+    if x.shape[0]:
+        with _on(x.device):
+            _backend().launch_rmsnorm_backward(x, residual, weight, grad, dx, dweight, eps)
+    return dx, dweight
 
 
 def _matmul_out(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:

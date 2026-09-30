@@ -1,11 +1,12 @@
 # Intermediate and advanced workshop validation
 
-Executed **2026-09-23** and last re-executed **2026-09-26** on the NVIDIA RTX 4080 SUPER
+Executed **2026-09-23** and last re-executed **2026-09-30** on the NVIDIA RTX 4080 SUPER
 under Ubuntu WSL2. The [second review](../../docs/records/REVIEW.md#second-review-2026-09-24)
-made kernel sizes and strides runtime arguments in every workshop solution; the
-2026-09-26 run repeats every check and measurement after the
+made kernel sizes and strides runtime arguments in every workshop solution, and the
 [fourth review](../../docs/records/REVIEW.md#fourth-review-2026-09-26) strengthened the
-fused-GEMM checker.
+fused-GEMM checker. The 2026-09-30 run repeats every check and measurement after the
+[improvements](../../docs/records/REVIEW.md#improvements-2026-09-30) to the portfolio
+kernels, which the workshop runner shares.
 Python 3.12.13, PyTorch 2.11.0+cu130, Triton 3.6.0, driver 595.97.
 This records execution of the separate reference solutions, not learner completion.
 
@@ -16,10 +17,10 @@ This records execution of the separate reference solutions, not learner completi
 | Online normalizer, standard library only | 11 named checks passed under `python -S` | CPU execution; also repeated at the start of [checks.log](checks.log) |
 | Five GPU reference implementations | 122 named checks passed, actual GPU execution | [checks.log](checks.log), 133 including the CPU workshop |
 | Learning checker regression suite | 15 tests passed under `python -S`, including six workshop-runner tests | [checker-tests.log](../learning/checker-tests.log) |
-| Portfolio regressions | 35 of 36 passed; the two-GPU test skipped, and the interpreter-only class, skipped at setup, runs separately (4 passed) | [portfolio-regression.log](portfolio-regression.log) |
+| Portfolio regressions | 48 of 49 passed; the two-GPU test skipped, and the interpreter-only class, skipped at setup, runs separately (5 passed) | [portfolio-regression.log](portfolio-regression.log) |
 | All benchmark variants | Correctness gate passed before timing | Errors and raw samples in the JSON below |
 | Static checks | Ruff passed across src, tests, scripts, examples and learning | Local Ruff execution |
-| Provenance | Measured kernels match current sources; the original reporting code is preserved under `source_snapshots` and verified against its original hash. Unused learner exercises do not invalidate reference timings. Measurements remain from 2026-09-26. | `source_sha256` and `source_snapshots` in the raw reports |
+| Provenance | Reports use schema version 2: the measured solutions and their shared dependencies match the current sources, checked by `tests/test_docs.py`; unused learner exercises are not fingerprinted. All measurements re-run on 2026-09-30 | `source_sha256` in the raw reports |
 
 Checks cover ragged dimensions, empty outputs, all supported dtypes, selected
 strided/broadcast layouts, option variants, invalid metadata, input preservation,
@@ -63,16 +64,16 @@ order is M,N,K; attention is N,D and causal=True. Strided inputs are transposes.
 
 | Operator / shape | Candidate | Graph baseline / candidate (us) | Graph ratio | Event ratio |
 | --- | --- | ---: | ---: | ---: |
-| Strided softmax, 256x257 | direct_4w | 3.922 / 2.304 | 1.70x | 1.08x |
-| Strided softmax, 1024x1024 | direct_4w | 18.893 / 15.514 | 1.22x | 0.60x |
-| Softmax VJP, 256x1025 | fused_vjp | 13.466 / 1.792 | 7.51x | 1.93x |
-| Softmax VJP, 1024x4097 | fused_vjp | 160.717 / 14.438 | 11.13x | 2.37x |
-| GEMM+bias+ReLU, 127x65x33 | group_4 | 12.379 / 2.560 | 4.84x | 4.37x |
-| GEMM+bias+ReLU, 512x512x512 | group_4 | 31.122 / 7.253 | 4.29x | 2.71x |
-| Split softmax, 4x32769 | chunk_1024 | 8.691 / 4.096 | 2.12x | 0.18x |
-| Split softmax, 64x131072 | chunk_4096 | 25.958 / 19.917 | 1.30x | 0.34x |
-| Attention, 129x32 | stream_bn64 | 6.963 / 3.478 | 2.00x | 0.65x |
-| Attention, 512x64 | stream_bn64 | 8.499 / 8.797 | 0.97x | 0.83x |
+| Strided softmax, 256x257 | direct_4w | 3.891 / 2.336 | 1.67x | 0.69x |
+| Strided softmax, 1024x1024 | direct_4w | 18.842 / 15.565 | 1.21x | 1.00x |
+| Softmax VJP, 256x1025 | fused_vjp | 13.501 / 1.792 | 7.53x | 2.41x |
+| Softmax VJP, 1024x4097 | fused_vjp | 127.885 / 14.234 | 8.98x | 5.65x |
+| GEMM+bias+ReLU, 127x65x33 | group_4 | 12.083 / 2.304 | 5.24x | 2.61x |
+| GEMM+bias+ReLU, 512x512x512 | group_4 | 30.046 / 6.901 | 4.35x | 2.61x |
+| Split softmax, 4x32769 | chunk_1024 | 8.704 / 3.891 | 2.24x | 0.22x |
+| Split softmax, 64x131072 | chunk_4096 | 25.856 / 19.661 | 1.32x | 0.54x |
+| Attention, 129x32 | stream_bn64 | 6.861 / 3.174 | 2.16x | 0.77x |
+| Attention, 512x64 | stream_bn64 | 8.550 / 8.806 | 0.97x | 0.94x |
 
 Interpretation matters:
 
@@ -85,17 +86,18 @@ Interpretation matters:
   These ratios **do not establish a win over fused half-precision cuBLASLt**.
   GROUP=1/4/8 were nearly tied at 512-cubed; the dispersion does not support a
   cache-efficiency claim or a convincing winner among those group sizes.
-- **Split softmax:** chunk_256 at 64x131072 took 54.102 us in graph mode, **0.48x**
+- **Split softmax:** chunk_256 at 64x131072 took 54.016 us in graph mode, **0.48x**
   the PyTorch baseline. More programs were not automatically better. In event
   timing all three split candidates lost on both shapes; Python dispatch and
   three launches change the result materially.
 - **Attention:** the primary baseline is PyTorch SDPA with automatic backend
-  selection. BN=64 won the small graph case (2.00x) but did not establish a win on
+  selection. BN=64 won the small graph case (2.16x) but did not establish a win on
   the larger case; its 0.97x result is close enough to treat as roughly tied. BN=32
   was clearly slower in the larger graph case at 0.71x. In event timing BN=64
-  measured 0.65x and 0.83x here, 0.32x and 1.00x on 2026-09-25, and 1.09x and
-  1.37x in an earlier run on 2026-09-26: event ratios that include Python dispatch of
-  several launches move with host load and do not rank these implementations.
+  measured 0.77x and 0.94x here; earlier runs measured 0.32x and 1.00x
+  (2026-09-25), then 1.09x and 1.37x, and 0.65x and 0.83x (2026-09-26). Event ratios
+  that include Python dispatch of several launches move with host load and do not
+  rank these implementations.
 
 These are local microbenchmarks on a desktop GPU, not isolated-server guarantees
 or model-level latency results. Min/max dispersion is recorded. No clock lock,

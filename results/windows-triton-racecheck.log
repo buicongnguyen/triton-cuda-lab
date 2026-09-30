@@ -4,40 +4,88 @@ ok  row_sum, single block, torch.float32
 ok  softmax, single block, torch.float32
 ok  softmax with -inf mask, single block, torch.float32
 ok  rmsnorm, single block, torch.float32
-ok  row_sum, looped, few rows (8192-wide chunks), torch.float32
-ok  softmax, looped, few rows (8192-wide chunks), torch.float32
-ok  softmax with -inf mask, looped, few rows (8192-wide chunks), torch.float32
-ok  rmsnorm, looped, few rows (8192-wide chunks), torch.float32
-ok  row_sum, looped, many rows (2048-wide chunks), torch.float32
-ok  softmax, looped, many rows (2048-wide chunks), torch.float32
-ok  softmax with -inf mask, looped, many rows (2048-wide chunks), torch.float32
-ok  rmsnorm, looped, many rows (2048-wide chunks), torch.float32
+ok  softmax backward, single block, torch.float32
+ok  rmsnorm backward dx, single block, torch.float32
+ok  rmsnorm backward dweight, single block, torch.float32
+ok  row_sum, split (few wide rows; row sum loops), torch.float32
+ok  softmax, split (few wide rows; row sum loops), torch.float32
+ok  softmax with -inf mask, split (few wide rows; row sum loops), torch.float32
+ok  rmsnorm, split (few wide rows; row sum loops), torch.float32
+ok  softmax backward, split (few wide rows; row sum loops), torch.float32
+ok  rmsnorm backward dx, split (few wide rows; row sum loops), torch.float32
+ok  rmsnorm backward dweight, split (few wide rows; row sum loops), torch.float32
+ok  row_sum, looped, 8192-wide chunks, torch.float32
+ok  softmax, looped, 8192-wide chunks, torch.float32
+ok  softmax with -inf mask, looped, 8192-wide chunks, torch.float32
+ok  rmsnorm, looped, 8192-wide chunks, torch.float32
+ok  softmax backward, looped, 8192-wide chunks, torch.float32
+ok  rmsnorm backward dx, looped, 8192-wide chunks, torch.float32
+ok  rmsnorm backward dweight, looped, 8192-wide chunks, torch.float32
+ok  row_sum, looped, 2048-wide chunks, torch.float32
+ok  softmax, looped, 2048-wide chunks, torch.float32
+ok  softmax with -inf mask, looped, 2048-wide chunks, torch.float32
+ok  rmsnorm, looped, 2048-wide chunks, torch.float32
+ok  softmax backward, looped, 2048-wide chunks, torch.float32
+ok  rmsnorm backward dx, looped, 2048-wide chunks, torch.float32
+ok  rmsnorm backward dweight, looped, 2048-wide chunks, torch.float32
 ok  add, torch.float16
 ok  row_sum, single block, torch.float16
 ok  softmax, single block, torch.float16
 ok  softmax with -inf mask, single block, torch.float16
 ok  rmsnorm, single block, torch.float16
-ok  row_sum, looped, few rows (8192-wide chunks), torch.float16
-ok  softmax, looped, few rows (8192-wide chunks), torch.float16
-ok  softmax with -inf mask, looped, few rows (8192-wide chunks), torch.float16
-ok  rmsnorm, looped, few rows (8192-wide chunks), torch.float16
-ok  row_sum, looped, many rows (2048-wide chunks), torch.float16
-ok  softmax, looped, many rows (2048-wide chunks), torch.float16
-ok  softmax with -inf mask, looped, many rows (2048-wide chunks), torch.float16
-ok  rmsnorm, looped, many rows (2048-wide chunks), torch.float16
+ok  softmax backward, single block, torch.float16
+ok  rmsnorm backward dx, single block, torch.float16
+ok  rmsnorm backward dweight, single block, torch.float16
+ok  row_sum, split (few wide rows; row sum loops), torch.float16
+ok  softmax, split (few wide rows; row sum loops), torch.float16
+ok  softmax with -inf mask, split (few wide rows; row sum loops), torch.float16
+ok  rmsnorm, split (few wide rows; row sum loops), torch.float16
+ok  softmax backward, split (few wide rows; row sum loops), torch.float16
+ok  rmsnorm backward dx, split (few wide rows; row sum loops), torch.float16
+ok  rmsnorm backward dweight, split (few wide rows; row sum loops), torch.float16
+ok  row_sum, looped, 8192-wide chunks, torch.float16
+ok  softmax, looped, 8192-wide chunks, torch.float16
+ok  softmax with -inf mask, looped, 8192-wide chunks, torch.float16
+ok  rmsnorm, looped, 8192-wide chunks, torch.float16
+ok  softmax backward, looped, 8192-wide chunks, torch.float16
+ok  rmsnorm backward dx, looped, 8192-wide chunks, torch.float16
+ok  rmsnorm backward dweight, looped, 8192-wide chunks, torch.float16
+ok  row_sum, looped, 2048-wide chunks, torch.float16
+ok  softmax, looped, 2048-wide chunks, torch.float16
+ok  softmax with -inf mask, looped, 2048-wide chunks, torch.float16
+ok  rmsnorm, looped, 2048-wide chunks, torch.float16
+ok  softmax backward, looped, 2048-wide chunks, torch.float16
+ok  rmsnorm backward dx, looped, 2048-wide chunks, torch.float16
+ok  rmsnorm backward dweight, looped, 2048-wide chunks, torch.float16
 ok  add, torch.bfloat16
 ok  row_sum, single block, torch.bfloat16
 ok  softmax, single block, torch.bfloat16
 ok  softmax with -inf mask, single block, torch.bfloat16
 ok  rmsnorm, single block, torch.bfloat16
-ok  row_sum, looped, few rows (8192-wide chunks), torch.bfloat16
-ok  softmax, looped, few rows (8192-wide chunks), torch.bfloat16
-ok  softmax with -inf mask, looped, few rows (8192-wide chunks), torch.bfloat16
-ok  rmsnorm, looped, few rows (8192-wide chunks), torch.bfloat16
-ok  row_sum, looped, many rows (2048-wide chunks), torch.bfloat16
-ok  softmax, looped, many rows (2048-wide chunks), torch.bfloat16
-ok  softmax with -inf mask, looped, many rows (2048-wide chunks), torch.bfloat16
-ok  rmsnorm, looped, many rows (2048-wide chunks), torch.bfloat16
+ok  softmax backward, single block, torch.bfloat16
+ok  rmsnorm backward dx, single block, torch.bfloat16
+ok  rmsnorm backward dweight, single block, torch.bfloat16
+ok  row_sum, split (few wide rows; row sum loops), torch.bfloat16
+ok  softmax, split (few wide rows; row sum loops), torch.bfloat16
+ok  softmax with -inf mask, split (few wide rows; row sum loops), torch.bfloat16
+ok  rmsnorm, split (few wide rows; row sum loops), torch.bfloat16
+ok  softmax backward, split (few wide rows; row sum loops), torch.bfloat16
+ok  rmsnorm backward dx, split (few wide rows; row sum loops), torch.bfloat16
+ok  rmsnorm backward dweight, split (few wide rows; row sum loops), torch.bfloat16
+ok  row_sum, looped, 8192-wide chunks, torch.bfloat16
+ok  softmax, looped, 8192-wide chunks, torch.bfloat16
+ok  softmax with -inf mask, looped, 8192-wide chunks, torch.bfloat16
+ok  rmsnorm, looped, 8192-wide chunks, torch.bfloat16
+ok  softmax backward, looped, 8192-wide chunks, torch.bfloat16
+ok  rmsnorm backward dx, looped, 8192-wide chunks, torch.bfloat16
+ok  rmsnorm backward dweight, looped, 8192-wide chunks, torch.bfloat16
+ok  row_sum, looped, 2048-wide chunks, torch.bfloat16
+ok  softmax, looped, 2048-wide chunks, torch.bfloat16
+ok  softmax with -inf mask, looped, 2048-wide chunks, torch.bfloat16
+ok  rmsnorm, looped, 2048-wide chunks, torch.bfloat16
+ok  softmax backward, looped, 2048-wide chunks, torch.bfloat16
+ok  rmsnorm backward dx, looped, 2048-wide chunks, torch.bfloat16
+ok  rmsnorm backward dweight, looped, 2048-wide chunks, torch.bfloat16
 ok  matmul, fixed tile, torch.float16
 ok  matmul, BM: 32, BN: 64, BK: 32, GROUP_M: 1, num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None, torch.float16
 ok  matmul, BM: 64, BN: 64, BK: 32, GROUP_M: 8, num_warps: 4, num_ctas: 1, num_stages: 3, maxnreg: None, torch.float16

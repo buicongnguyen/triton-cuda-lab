@@ -1,0 +1,19 @@
+torch 2.11.0+cu130; kernels in launch order
+
+residual RMSNorm FP16, 1024 x 1024: 1 kernel launch
+  triton_per_fused__to_copy_add_mean_mul_pow_rsqrt_0: one-block reduction; xnumel=1024, r0_numel=1024
+
+residual RMSNorm FP16, 64 x 131072: 3 kernel launches
+  triton_red_fused__to_copy_add_mean_pow_0: looped reduction; xnumel=256, r0_numel=32768
+  triton_per_fused__to_copy_add_mean_pow_1: one-block reduction; xnumel=64, r0_numel=4
+  triton_poi_fused__to_copy_add_mean_mul_pow_rsqrt_2: pointwise; xnumel=8388608
+
+softmax FP32, 1024 x 1024: 1 kernel launch
+  triton_per_fused__softmax_exp_prepare_softmax_online_sub_0: one-block reduction; xnumel=1024, r0_numel=1024
+
+softmax FP32, 64 x 131072: 5 kernel launches
+  triton_red_fused_prepare_softmax_online_0: looped reduction; xnumel=256, r0_numel=32768
+  triton_per_fused_prepare_softmax_online_1: one-block reduction; xnumel=64, r0_numel=4
+  triton_red_fused_prepare_softmax_online_2: looped reduction; xnumel=256, r0_numel=32768
+  triton_per_fused_prepare_softmax_online_3: one-block reduction; xnumel=64, r0_numel=4
+  triton_poi_fused__softmax_exp_sub_4: pointwise; xnumel=8388608
