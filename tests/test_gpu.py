@@ -34,8 +34,10 @@ class _GpuCase(unittest.TestCase):
             raise unittest.SkipTest("NVIDIA CUDA and Triton required")
         torch.manual_seed(2026)
         cls.dtypes = (torch.float32, torch.float16, torch.bfloat16)
-        # Wide rows split across programs below one row per SM, loop in 8192-wide chunks
-        # up to two rows per SM, and in 2048-wide chunks beyond that: test every side.
+        # Rows past the single-block limit take one of three plans (see _row_plan): split
+        # across programs (softmax; RMSNorm above width 16384) below one row per SM, looped
+        # in 4096-wide chunks from one row per SM if the row is at most 28672 wide, and
+        # looped in 8192-wide chunks otherwise. Widths and row counts below reach each plan.
         sms = torch.cuda.get_device_properties(0).multi_processor_count
         cls.sm_rows, cls.many_rows = sms, 2 * sms
 
@@ -68,6 +70,7 @@ class GpuTests(_GpuCase):
                 (1, 131072),
                 (self.sm_rows, 8193),
                 (self.many_rows, 8195),
+                (self.sm_rows, 32769),
             ):
                 for padded in (False, True):
                     with self.subTest(dtype=dtype, shape=(rows, width), padded=padded):
@@ -129,6 +132,7 @@ class GpuTests(_GpuCase):
                 (3, 8193),
                 (self.sm_rows, 8193),
                 (self.many_rows, 8195),
+                (self.sm_rows, 32769),
                 (2, 32769),
             ):
                 with self.subTest(dtype=dtype, shape=(rows, width)):
@@ -163,6 +167,7 @@ class GpuTests(_GpuCase):
                 (4, 20000),
                 (self.sm_rows, 8193),
                 (self.many_rows, 8195),
+                (self.sm_rows, 32769),
             ):
                 with self.subTest(dtype=dtype, shape=(rows, width)):
                     x = torch.randn((rows, width + 3), device="cuda", dtype=dtype)[:, :width]
@@ -193,22 +198,39 @@ class GpuTests(_GpuCase):
             (4, 20000),
             (self.sm_rows, 8193),
             (self.many_rows, 8195),
+            (self.sm_rows, 32769),
         )
 
     @staticmethod
     def upstream(rows, width, dtype, layout):
-        """Upstream gradients as autograd delivers them: dense, transposed or broadcast."""
+        """Upstream gradients as autograd delivers them: dense, transposed or broadcast.
+
+        `row_broadcast` (strides 1, 0) is what row_sum hands back, `scalar` (0, 0) what a
+        summed loss hands back, and `shifted` has a large mean: the row dot product
+        y * dy of a softmax is then O(1) instead of tiny, so a lost term shows up.
+        """
         if layout == "transposed":
             return torch.randn((width, rows), device="cuda", dtype=dtype).T
         if layout == "expanded":
             return torch.randn((1, width), device="cuda", dtype=dtype).expand(rows, width)
+        if layout == "row_broadcast":
+            return torch.randn((rows, 1), device="cuda", dtype=dtype).expand(rows, width)
+        if layout == "scalar":
+            return torch.randn((), device="cuda", dtype=dtype).expand(rows, width)
+        if layout == "shifted":
+            return torch.randn((rows, width), device="cuda", dtype=dtype) + 2
         return torch.randn((rows, width), device="cuda", dtype=dtype)
+
+    @staticmethod
+    def layouts(dtype, extra):
+        """Three layouts in every dtype; the extra ones in FP16 alone (they do not depend on it)."""
+        return ("contiguous", "transposed", "expanded") + (extra if dtype == torch.float16 else ())
 
     def test_softmax_backward(self):
         """Autograd through ops.softmax matches FP64 autograd for every row plan."""
         for dtype in self.dtypes:
             for rows, width in self.grad_shapes():
-                for layout in ("contiguous", "transposed", "expanded"):
+                for layout in self.layouts(dtype, ("row_broadcast", "scalar", "shifted")):
                     with self.subTest(dtype=dtype, shape=(rows, width), grad=layout):
                         x = torch.randn((rows, width), device="cuda", dtype=dtype)
                         dy = self.upstream(rows, width, dtype, layout)
@@ -225,7 +247,7 @@ class GpuTests(_GpuCase):
         for dtype in self.dtypes:
             tol = tolerance("rmsnorm", dtype)
             for rows, width in self.grad_shapes():
-                for layout in ("contiguous", "transposed"):
+                for layout in self.layouts(dtype, ("row_broadcast", "scalar")):
                     with self.subTest(dtype=dtype, shape=(rows, width), grad=layout):
                         # Views with row gaps: the padding must receive zero gradient.
                         bx = torch.randn((rows, width + 3), device="cuda", dtype=dtype)
@@ -251,6 +273,208 @@ class GpuTests(_GpuCase):
             first, second = (ops.residual_rmsnorm_backward(*args) for _ in range(2))
             for a, b in zip(first, second):
                 torch.testing.assert_close(a, b, atol=0, rtol=0)
+
+    def test_rmsnorm_backward_with_correlated_gradient(self):
+        """The row term z * sum(dy * w * z) is O(1) only if dy follows z and w has a mean."""
+        for dtype in (torch.float16, torch.bfloat16):
+            tol = tolerance("rmsnorm", dtype)
+            for rows, width in self.grad_shapes():
+                if not rows:
+                    continue
+                with self.subTest(dtype=dtype, shape=(rows, width)):
+                    x = torch.randn((rows, width), device="cuda", dtype=dtype, requires_grad=True)
+                    r = torch.randn((rows, width), device="cuda", dtype=dtype, requires_grad=True)
+                    w = (1 + 0.5 * torch.randn(width, device="cuda")).to(dtype).requires_grad_()
+                    dy = (x + r).detach()
+                    ops.residual_rmsnorm(x, r, w).backward(dy)
+                    x64, r64, w64 = (t.detach().double().requires_grad_() for t in (x, r, w))
+                    z = x64 + r64
+                    (z * torch.rsqrt(z.square().mean(-1, keepdim=True) + 1e-5) * w64).backward(
+                        dy.double()
+                    )
+                    torch.testing.assert_close(x.grad, x64.grad.to(dtype), **tol)
+                    torch.testing.assert_close(r.grad, r64.grad.to(dtype), **tol)
+                    dw_tol = {**tol, "atol": tol["atol"] * max(1.0, rows**0.5)}
+                    torch.testing.assert_close(w.grad, w64.grad.to(dtype), **dw_tol)
+
+    def test_add_and_row_sum_gradients(self):
+        """add passes the gradient through; row_sum broadcasts it (both exact)."""
+        for dtype in self.dtypes:
+            for n in (0, 1, 257):
+                with self.subTest(dtype=dtype, op="add", n=n):
+                    x = torch.randn(n, device="cuda", dtype=dtype, requires_grad=True)
+                    y = torch.randn(n, device="cuda", dtype=dtype, requires_grad=True)
+                    w = torch.randn(n, device="cuda", dtype=dtype)
+                    (ops.add(x, y) * w).sum().backward()
+                    torch.testing.assert_close(x.grad, w, atol=0, rtol=0)
+                    torch.testing.assert_close(y.grad, w, atol=0, rtol=0)
+            for rows, width in ((0, 3), (1, 1), (7, 33), (3, 8193), (self.sm_rows, 8193)):
+                with self.subTest(dtype=dtype, op="row_sum", shape=(rows, width)):
+                    shape = (rows, width + 3)  # a view with row gaps: the gaps get no gradient
+                    backing = torch.randn(shape, device="cuda", dtype=dtype, requires_grad=True)
+                    weights = torch.randn(rows, device="cuda")
+                    (ops.row_sum(backing[:, :width]) * weights).sum().backward()
+                    expected = weights.to(dtype)[:, None].expand(rows, width)
+                    torch.testing.assert_close(backing.grad[:, :width], expected, atol=0, rtol=0)
+                    self.assertEqual(backing.grad[:, width:].abs().sum().item(), 0)
+
+    def test_shared_gradients_do_not_alias(self):
+        """add and RMSNorm hand one tensor to two inputs; each leaf must own its gradient."""
+        x, y = (torch.randn(257, device="cuda", requires_grad=True) for _ in range(2))
+        ops.add(x, y).sum().backward()
+        self.assertNotEqual(x.grad.data_ptr(), y.grad.data_ptr())
+        h, r = (torch.randn((3, 33), device="cuda", requires_grad=True) for _ in range(2))
+        w = torch.randn(33, device="cuda", requires_grad=True)
+        ops.residual_rmsnorm(h, r, w).square().sum().backward()
+        self.assertNotEqual(h.grad.data_ptr(), r.grad.data_ptr())
+        h.grad.zero_()  # would zero r.grad as well if the two shared storage
+        self.assertGreater(r.grad.abs().sum().item(), 0)
+
+    def test_matmul_backward(self):
+        """dA and dB match FP64 autograd: ragged, empty, and non-dense upstream gradients."""
+        shapes = (
+            (1, 1, 1),
+            (31, 65, 33),
+            (127, 255, 65),
+            (257, 129, 96),
+            (300, 100, 50),
+            (600, 130, 200),
+            (0, 3, 4),
+            (3, 0, 4),
+            (3, 4, 0),
+        )
+        for dtype in (torch.float16, torch.bfloat16):
+            tol = tolerance("matmul", dtype)
+            for m, n, k in shapes:
+                for layout in self.layouts(dtype, ("row_broadcast", "scalar")):
+                    # The autotuner times 8 configs for a new shape: cover it on one shape.
+                    tuned = (True, False) if (m, n, k) == (127, 255, 65) else (False,)
+                    for autotune in tuned:
+                        with self.subTest(
+                            dtype=dtype, shape=(m, n, k), grad=layout, tuned=autotune
+                        ):
+                            a = torch.randn((m, k), device="cuda", dtype=dtype)
+                            b = torch.randn((k, n), device="cuda", dtype=dtype)
+                            dy = self.upstream(m, n, dtype, layout)
+                            a_leaf, b_leaf = a.clone().requires_grad_(), b.clone().requires_grad_()
+                            ops.matmul(a_leaf, b_leaf, autotune=autotune).backward(dy)
+                            a64, b64 = a.double().requires_grad_(), b.double().requires_grad_()
+                            (a64 @ b64).backward(dy.double())
+                            torch.testing.assert_close(a_leaf.grad, a64.grad.to(dtype), **tol)
+                            torch.testing.assert_close(b_leaf.grad, b64.grad.to(dtype), **tol)
+
+    def test_matmul_backward_frozen_operands_and_direct_call(self):
+        half = {"device": "cuda", "dtype": torch.float16}
+        a, b, dy = (
+            torch.randn((40, 33), **half),
+            torch.randn((33, 24), **half),
+            torch.randn((40, 24), **half),
+        )
+        da, db = ops.matmul_backward(dy, a, b)
+        only_a = a.clone().requires_grad_()  # b is frozen: dB is never computed
+        ops.matmul(only_a, b).backward(dy)
+        only_b = b.clone().requires_grad_()  # a is frozen: dA is never computed
+        ops.matmul(a, only_b).backward(dy)
+        torch.testing.assert_close(only_a.grad, da, atol=0, rtol=0)
+        torch.testing.assert_close(only_b.grad, db, atol=0, rtol=0)
+        for got, want in zip(ops.matmul_backward(dy, a, b), (da, db)):  # deterministic
+            torch.testing.assert_close(got, want, atol=0, rtol=0)
+
+    def test_every_backward_gemm_config(self):
+        import triton
+
+        from kernel_portfolio import triton_kernels as k
+
+        tried = 0
+        for config in k._matmul_configs():
+            for m, n, kk in ((127, 255, 65), (257, 129, 96)):
+                with self.subTest(config=str(config), shape=(m, n, kk)):
+                    half = {"device": "cuda", "dtype": torch.float16}
+                    a, b, g = (
+                        torch.randn((m, kk), **half),
+                        torch.randn((kk, n), **half),
+                        torch.randn((m, n), **half),
+                    )
+                    da = torch.full((m, kk), float("nan"), **half)
+                    db = torch.full((kk, n), float("nan"), **half)
+                    meta = config.kwargs
+
+                    def run(x, y, out, rows, cols, red, xs, ys, meta=meta, config=config):
+                        grid = (triton.cdiv(rows, meta["BM"]) * triton.cdiv(cols, meta["BN"]),)
+                        args = (
+                            x,
+                            y,
+                            out,
+                            rows,
+                            k.m_bucket(rows),
+                            red,
+                            k.m_bucket(red),
+                            *xs,
+                            *ys,
+                            cols,
+                        )
+                        k._matmul_strided[grid](
+                            *args, **meta, num_warps=config.num_warps, num_stages=config.num_stages
+                        )
+
+                    try:
+                        run(g, b, da, m, kk, n, g.stride(), b.t().stride())
+                        run(a, g, db, kk, n, m, a.t().stride(), g.stride())
+                    except triton.runtime.errors.OutOfResources:
+                        continue  # the autotuner skips these configs too
+                    tol = tolerance("matmul", torch.float16)
+                    torch.testing.assert_close(da, (g.double() @ b.double().T).half(), **tol)
+                    torch.testing.assert_close(db, (a.double().T @ g.double()).half(), **tol)
+                    tried += 1
+        # 8 configs on 2 shapes; a GPU with less shared memory may skip a few.
+        self.assertGreaterEqual(tried, 8)
+
+    def test_backward_reuses_tuning_across_batch_sizes(self):
+        """Token counts in one power-of-two bucket share tuning; a new bucket adds one."""
+        from kernel_portfolio import triton_kernels as k
+
+        half = {"device": "cuda", "dtype": torch.float16}
+        b = torch.randn((64, 48), **half)
+
+        def run(tokens):
+            ops.matmul_backward(
+                torch.randn((tokens, 48), **half), torch.randn((tokens, 64), **half), b
+            )
+
+        def tuned():
+            return len(k._matmul_grad_a_tuned.cache), len(k._matmul_grad_b_tuned.cache)
+
+        run(33)
+        before = tuned()
+        run(40)
+        self.assertEqual(tuned(), before, "33 and 40 tokens share one tuning bucket")
+        run(100)
+        self.assertEqual(tuned(), (before[0] + 1, before[1] + 1), "100 tokens start a new bucket")
+
+    def test_matmul_saves_only_the_operands_its_gradients_read(self):
+        half = {"device": "cuda", "dtype": torch.float16}
+        a, b = torch.randn((8, 4), **half), torch.randn((4, 6), **half)
+        for a_grad, b_grad, shapes in (
+            (True, False, [(4, 6)]),  # dA reads b
+            (False, True, [(8, 4)]),  # dB reads a
+            (True, True, [(4, 6), (8, 4)]),
+        ):
+            saved = []
+
+            def pack(tensor, saved=saved):
+                saved.append(tuple(tensor.shape))
+                return tensor
+
+            with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+                ops.matmul(a.clone().requires_grad_(a_grad), b.clone().requires_grad_(b_grad))
+            with self.subTest(a_grad=a_grad, b_grad=b_grad):
+                self.assertEqual(saved, shapes)
+
+    def test_double_backward_is_rejected(self):
+        x = torch.randn((3, 33), device="cuda", requires_grad=True)
+        (g,) = torch.autograd.grad(ops.softmax(x).square().sum(), x, create_graph=True)
+        with self.assertRaisesRegex(RuntimeError, "no autograd formula"):
+            g.square().sum().backward()
 
     def test_gemm(self):
         for dtype in (torch.float16, torch.bfloat16):
@@ -316,7 +540,7 @@ class GpuTests(_GpuCase):
             lambda: ops.softmax(x[:, ::2]),
             lambda: ops.softmax(torch.ones((1, (1 << 20) + 1), device="cuda")),
             lambda: ops.softmax(x, num_warps=3),
-            lambda: ops.row_sum(x.clone().requires_grad_()),
+            lambda: ops.softmax_backward(x.clone().requires_grad_(), x),
             lambda: ops.softmax_backward(x, x.T.contiguous().T),
             lambda: ops.softmax_backward(x[:, :2], x),
             lambda: ops.residual_rmsnorm_backward(x[:1], x, x, x[0]),
@@ -329,6 +553,19 @@ class GpuTests(_GpuCase):
                 call()
         with self.assertRaises(TypeError):
             ops.matmul(x, x.T.contiguous())
+        half = {"device": "cuda", "dtype": torch.float16}
+        a, b, g = torch.ones((2, 3), **half), torch.ones((3, 4), **half), torch.ones((2, 4), **half)
+        for call in (
+            lambda: ops.matmul_backward(torch.ones((2, 5), **half), a, b),
+            lambda: ops.matmul_backward(g[:1], a, b),
+            lambda: ops.matmul_backward(g, a, b.T),
+            lambda: ops.matmul_backward(g, a, torch.ones((5, 4), **half)),  # a is 2x3, b is 5x4
+            lambda: ops.matmul_backward(g.clone().requires_grad_(), a, b),
+        ):
+            with self.assertRaises(ValueError):
+                call()
+        with self.assertRaises(TypeError):
+            ops.matmul_backward(g.float(), a.float(), b.float())
 
     def test_parameters_train_and_infer(self):
         """A weight Parameter trains under autograd and is accepted under no_grad."""
@@ -346,8 +583,8 @@ class GpuTests(_GpuCase):
         torch.testing.assert_close(
             weight.grad, w64.grad.float(), **tolerance("rmsnorm", torch.float32)
         )
-        with self.assertRaisesRegex(ValueError, "forward-only"):
-            ops.row_sum(x.clone().requires_grad_())
+        with self.assertRaisesRegex(ValueError, "not differentiable"):
+            ops.softmax_backward(x.clone().requires_grad_(), x)
 
     def test_varying_sizes_reuse_compiled_kernels(self):
         """Per-request sizes (length, rows, stride, GEMM M) must not recompile or retune."""
@@ -459,14 +696,16 @@ class BenchmarkSmokeTests(_GpuCase):
         expected = {
             "softmax_train": {"torch", "triton"},
             "rmsnorm_train": {"torch", "torch_rms_norm", "triton"},
+            "matmul_train": {"torch", "triton"},
         }
+        shapes = {"softmax_train": "8 33", "rmsnorm_train": "8 33", "matmul_train": "8 33 16"}
         timings = ["events"] + (["graph"] if GRAPHS_OK else [])
         with tempfile.TemporaryDirectory() as directory:
             for op, variants in expected.items():
                 for timing in timings:
                     with self.subTest(op=op, timing=timing):
                         path = Path(directory) / f"{op}-{timing}.json"
-                        argv = ["--op", op, "--shape", "8", "33", "--samples", "3"]
+                        argv = ["--op", op, "--shape", *shapes[op].split(), "--samples", "3"]
                         argv += ["--iterations", "2", "--timing", timing, "--output", str(path)]
                         quiet = io.StringIO()
                         with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
@@ -474,6 +713,35 @@ class BenchmarkSmokeTests(_GpuCase):
                         report = json.loads(path.read_text(encoding="utf-8"))
                         self.assertEqual(set(report["cases"][0]["variants"]), variants)
                         self.assertIn("before", report["gpu_utilization_percent"])
+
+    def test_warm_up_runs_inside_and_outside_inference_mode(self):
+        """The burst's operands are cached; allocating them in inference mode must not break
+        a later burst outside it (benchmark.main runs in inference mode, other callers do not)."""
+        from unittest import mock
+
+        from kernel_portfolio import benchmark
+
+        with mock.patch.dict(benchmark._warm, {"operands": None, "end": 0.0, "bursts": 0}):
+            with torch.inference_mode():
+                benchmark.warm_gpu(0.01)
+            benchmark.warm_gpu(0.01)
+            self.assertEqual(benchmark._warm["bursts"], 2)
+
+    def test_report_counts_only_its_own_warm_up_bursts(self):
+        from unittest import mock
+
+        from kernel_portfolio import benchmark
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "add.json"
+            argv = ["--op", "add", "--shape", "257", "--samples", "3", "--iterations", "2"]
+            argv += ["--timing", "events", "--output", str(path)]
+            with mock.patch.dict(benchmark._warm, {"bursts": 100}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    benchmark.main(argv)
+            warmup = json.loads(path.read_text(encoding="utf-8"))["warmup"]
+            self.assertGreaterEqual(warmup["bursts"], 1)
+            self.assertLess(warmup["bursts"], 100, "the count includes bursts of earlier runs")
 
     def test_workshop_benchmark_cold_cache(self):
         from learning.provenance import measured_workshop_hashes
@@ -514,21 +782,31 @@ class CompileTests(_GpuCase):
         plain = ("test_schema", "test_faketensor")
         trained = (*plain, "test_autograd_registration", "test_aot_dispatch_dynamic")
         wide = torch.randn((3, 20000), device="cuda", dtype=torch.float16)
-        grads = [t.detach().requires_grad_() for t in (self.x, self.r, self.w, wide)]
+
+        def leaf(t):
+            return t.detach().clone().requires_grad_()
+
         y = torch.softmax(self.x.float(), -1).half()
+        grad_ab = torch.randn((40, 24), device="cuda", dtype=torch.float16)
         for op, args, utils in (
-            (ns.softmax.default, (grads[0],), trained),
-            (ns.softmax.default, (grads[3],), trained),
-            (ns.residual_rmsnorm.default, (*grads[:3], 1e-5), trained),
+            (ns.softmax.default, (leaf(self.x),), trained),
+            (ns.softmax.default, (leaf(wide),), trained),
+            (
+                ns.residual_rmsnorm.default,
+                (leaf(self.x), leaf(self.r), leaf(self.w), 1e-5),
+                trained,
+            ),
+            (ns.row_sum.default, (leaf(self.x),), trained),
+            (ns.add.default, (leaf(self.x[0]), leaf(self.r[0])), trained),
+            (ns.matmul.default, (leaf(self.a), leaf(self.b)), trained),
             (ns.softmax_backward.default, (torch.randn_like(self.x), y), plain),
             (
                 ns.residual_rmsnorm_backward.default,
                 (torch.randn_like(self.x), self.x, self.r, self.w, 1e-5),
                 plain,
             ),
-            (ns.row_sum.default, (self.x,), plain),
-            (ns.matmul.default, (self.a, self.b), plain),
-            (ns.add.default, (self.x[0], self.r[0]), plain),
+            (ns.matmul_grad_a.default, (grad_ab, self.b), plain),
+            (ns.matmul_grad_b.default, (grad_ab, self.a), plain),
         ):
             with self.subTest(op=str(op), width=args[0].shape[-1]):
                 torch.library.opcheck(op, args, test_utils=utils)
@@ -552,7 +830,34 @@ class CompileTests(_GpuCase):
                 for a, b in zip(got, results[0]):
                     torch.testing.assert_close(a, b)
 
-    def test_other_custom_ops_are_forward_only(self):
+    def test_compiled_full_training_step_matches_eager(self):
+        """One step through every operator: norm, softmax, GEMM, reduction and add."""
+        ns = torch.ops.kernel_portfolio
+        offsets = torch.randn(8, device="cuda")
+
+        def step(x, r, w, b, t):
+            p = ns.softmax(ns.residual_rmsnorm(x, r, w, 1e-5) * 2)
+            s = ns.row_sum(ns.matmul(p, b))
+            return (ns.add(s, t) * torch.arange(8, device=s.device)).sum()
+
+        results = []
+        for mode in ("eager", "compiled", "dynamic"):
+            leaves = [
+                t.detach().clone().requires_grad_()
+                for t in (self.x, self.r, self.w, self.b, offsets)
+            ]
+            fn = step if mode == "eager" else torch.compile(step, dynamic=mode == "dynamic")
+            loss = fn(*leaves)
+            loss.backward()
+            results.append((loss.detach(), *(t.grad for t in leaves)))
+        for mode, got in zip(("compiled", "dynamic"), results[1:]):
+            with self.subTest(mode=mode):
+                for a, b in zip(got, results[0]):
+                    # Compiled and eager run the same kernels: over 60 seeds the worst
+                    # difference was 0.2% of this tolerance.
+                    torch.testing.assert_close(a, b, atol=1e-3, rtol=1e-3)
+
+    def test_custom_ops_train_and_infer(self):
         ns = torch.ops.kernel_portfolio
         for op, args in (
             (ns.row_sum, (self.x,)),
@@ -561,10 +866,11 @@ class CompileTests(_GpuCase):
         ):
             with self.subTest(op=str(op)):
                 inputs = tuple(x.detach().requires_grad_() for x in args)
-                with torch.enable_grad():
-                    out = op(*inputs)
-                    with self.assertRaisesRegex(RuntimeError, "no autograd formula"):
-                        out.sum().backward()
+                out = op(*inputs)
+                self.assertTrue(out.requires_grad)
+                out.float().sum().backward()
+                for leaf in inputs:
+                    self.assertEqual(leaf.grad.shape, leaf.shape)
                 with torch.no_grad():
                     inference = op(*inputs)
                 self.assertFalse(inference.requires_grad)
@@ -600,6 +906,39 @@ class CompileTests(_GpuCase):
             y, c = compiled(x, torch.zeros_like(x), self.w, a, self.b)
             torch.testing.assert_close(y, ops.softmax(ops.residual_rmsnorm(x, x * 0, self.w) * 2))
             torch.testing.assert_close(c, ops.matmul(a, self.b))
+
+
+@unittest.skipUnless(GRAPHS_OK, "Sixty training steps are too slow under Compute Sanitizer")
+class TrainingExampleTests(_GpuCase):
+    """examples/train_tiny.py: a whole model through the operators against plain PyTorch."""
+
+    STEPS = 60
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        path = Path(__file__).resolve().parents[1] / "examples" / "train_tiny.py"
+        spec = importlib.util.spec_from_file_location("train_tiny", path)
+        cls.tiny = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.tiny)
+
+    def check_training(self, **kwargs):
+        ours = self.tiny.train(self.tiny.forward_triton, self.STEPS, **kwargs)
+        theirs = self.tiny.train(self.tiny.forward_torch, self.STEPS)
+        for step, ((a, _), (b, _)) in enumerate(zip(ours, theirs)):
+            # BF16 rounding differs per operator; six seeds tracked within 8e-4 relative.
+            self.assertLess(abs(a - b) / b, 0.005, f"loss at step {step}")
+        for name, history in (("Triton", ours), ("PyTorch", theirs)):
+            first, last = history[0][0], history[-1][0]
+            self.assertGreater(first / last, 2.0, f"{name} loss barely fell: {first} -> {last}")
+            accuracy = sum(item[1] for item in history[-5:]) / 5
+            self.assertGreater(accuracy, 0.7, f"{name} accuracy {accuracy}")
+
+    def test_tiny_model_trains_like_pytorch(self):
+        self.check_training()
+
+    def test_tiny_model_trains_compiled(self):
+        self.check_training(compile_step=True)
 
 
 class CheckerMutationTests(_GpuCase):

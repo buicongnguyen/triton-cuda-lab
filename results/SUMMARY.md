@@ -8,354 +8,379 @@ Different dtypes and timing modes are separate experiments. See
 
 ## rtx4080super-cuda.json
 
-NVIDIA GeForce RTX 4080 SUPER; float32; CUDA events; 50 launches/sample; 15 samples, kernels interleaved.
+NVIDIA GeForce RTX 4080 SUPER; float32; CUDA events; 50 launches/sample; 15 samples, kernels interleaved; 250 ms compute warm-up first.
 
 | CUDA variant | Median (us) |
 | --- | ---: |
-| vector_add | 8.868 |
-| softmax_serial | 477.348 |
-| softmax_parallel | 9.814 |
-| softmax_online | 9.827 |
-| softmax_online_scalar | 9.747 |
+| vector_add | 8.643 |
+| softmax_serial | 418.550 |
+| softmax_parallel | 12.361 |
+| softmax_online | 11.162 |
+| softmax_online_scalar | 9.165 |
 
 ## rtx4080super-rmsnorm-compiled.json
 
-NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T08:13:12.902372+00:00. other GPU load before: 22%; other GPU load after: 9%.
+NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T13:49:48.467798+00:00. other GPU load before: 3%; other GPU load after: 16%. GPU warm-up: a 200 ms burst when the last one ended over 250 ms before (9 ran).
 
 | Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| rmsnorm | 32 x 127 | float16 | torch | 12.698 | 1.00x | 0 |
-| rmsnorm | 32 x 127 | float16 | torch_rms_norm | 9.216 | 1.38x | 0.00195 |
-| rmsnorm | 32 x 127 | float16 | triton | 1.024 | 12.40x | 0 |
-| rmsnorm | 32 x 127 | float16 | torch_compiled | 1.049 | 12.11x | 0 |
-| rmsnorm | 1024 x 1024 | float16 | torch | 31.812 | 1.00x | 0.00195 |
-| rmsnorm | 1024 x 1024 | float16 | torch_rms_norm | 21.367 | 1.49x | 0.00195 |
-| rmsnorm | 1024 x 1024 | float16 | triton | 2.697 | 11.80x | 0.00195 |
-| rmsnorm | 1024 x 1024 | float16 | torch_compiled | 5.257 | 6.05x | 0.00195 |
-| rmsnorm | 512 x 4097 | float16 | torch | 53.760 | 1.00x | 0.00195 |
-| rmsnorm | 512 x 4097 | float16 | torch_rms_norm | 46.490 | 1.16x | 0.00195 |
-| rmsnorm | 512 x 4097 | float16 | triton | 7.441 | 7.22x | 0.00391 |
-| rmsnorm | 512 x 4097 | float16 | torch_compiled | 11.700 | 4.59x | 0.00195 |
-| rmsnorm | 16384 x 4096 | float16 | torch | 7343.992 | 1.00x | 0.00781 |
-| rmsnorm | 16384 x 4096 | float16 | torch_rms_norm | 4843.247 | 1.52x | 0.00781 |
-| rmsnorm | 16384 x 4096 | float16 | triton | 754.210 | 9.74x | 0.00781 |
-| rmsnorm | 16384 x 4096 | float16 | torch_compiled | 809.233 | 9.08x | 0.00781 |
-| rmsnorm | 4 x 32769 | float16 | torch | 16.828 | 1.00x | 0.000244 |
-| rmsnorm | 4 x 32769 | float16 | torch_rms_norm | 35.942 | 0.47x | 0.00195 |
-| rmsnorm | 4 x 32769 | float16 | triton | 2.765 | 6.09x | 0.00195 |
-| rmsnorm | 4 x 32769 | float16 | torch_compiled | 37.308 | 0.45x | 0.00195 |
-| rmsnorm | 64 x 131072 | float16 | torch | 494.626 | 1.00x | 0.00391 |
-| rmsnorm | 64 x 131072 | float16 | torch_rms_norm | 442.470 | 1.12x | 0.00391 |
-| rmsnorm | 64 x 131072 | float16 | triton | 27.429 | 18.03x | 0.00391 |
-| rmsnorm | 64 x 131072 | float16 | torch_compiled | 178.074 | 2.78x | 0.00391 |
+| rmsnorm | 32 x 127 | float16 | torch | 12.800 | 1.00x | 0 |
+| rmsnorm | 32 x 127 | float16 | torch_rms_norm | 9.182 | 1.39x | 0.00195 |
+| rmsnorm | 32 x 127 | float16 | triton | 1.638 | 7.81x | 0 |
+| rmsnorm | 32 x 127 | float16 | torch_compiled | 2.059 | 6.22x | 0 |
+| rmsnorm | 1024 x 1024 | float16 | torch | 32.251 | 1.00x | 0.00195 |
+| rmsnorm | 1024 x 1024 | float16 | torch_rms_norm | 22.016 | 1.46x | 0.00195 |
+| rmsnorm | 1024 x 1024 | float16 | triton | 2.958 | 10.90x | 0.00195 |
+| rmsnorm | 1024 x 1024 | float16 | torch_compiled | 5.252 | 6.14x | 0.00195 |
+| rmsnorm | 512 x 4097 | float16 | torch | 54.101 | 1.00x | 0.00195 |
+| rmsnorm | 512 x 4097 | float16 | torch_rms_norm | 46.114 | 1.17x | 0.00195 |
+| rmsnorm | 512 x 4097 | float16 | triton | 7.873 | 6.87x | 0.00391 |
+| rmsnorm | 512 x 4097 | float16 | torch_compiled | 12.595 | 4.30x | 0.00195 |
+| rmsnorm | 16384 x 4096 | float16 | torch | 6204.348 | 1.00x | 0.00781 |
+| rmsnorm | 16384 x 4096 | float16 | torch_rms_norm | 4153.685 | 1.49x | 0.00781 |
+| rmsnorm | 16384 x 4096 | float16 | triton | 643.652 | 9.64x | 0.00781 |
+| rmsnorm | 16384 x 4096 | float16 | torch_compiled | 626.790 | 9.90x | 0.00781 |
+| rmsnorm | 4 x 32769 | float16 | torch | 16.950 | 1.00x | 0.000244 |
+| rmsnorm | 4 x 32769 | float16 | torch_rms_norm | 36.044 | 0.47x | 0.00195 |
+| rmsnorm | 4 x 32769 | float16 | triton | 2.970 | 5.71x | 0.00195 |
+| rmsnorm | 4 x 32769 | float16 | torch_compiled | 33.651 | 0.50x | 0.000977 |
+| rmsnorm | 64 x 131072 | float16 | torch | 462.916 | 1.00x | 0.00391 |
+| rmsnorm | 64 x 131072 | float16 | torch_rms_norm | 395.659 | 1.17x | 0.00391 |
+| rmsnorm | 64 x 131072 | float16 | triton | 27.536 | 16.81x | 0.00391 |
+| rmsnorm | 64 x 131072 | float16 | torch_compiled | 133.622 | 3.46x | 0.00391 |
 
 ## rtx4080super-softmax-compiled.json
 
-NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T08:13:25.561939+00:00. other GPU load before: 24%; other GPU load after: 10%.
+NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T13:52:45.552705+00:00. other GPU load before: 26%; other GPU load after: 19%. GPU warm-up: a 200 ms burst when the last one ended over 250 ms before (7 ran).
 
 | Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| softmax | 32 x 127 | float32 | torch | 1.399 | 1.00x | 7.45e-09 |
-| softmax | 32 x 127 | float32 | torch_decomposed | 6.608 | 0.21x | 7.45e-09 |
-| softmax | 32 x 127 | float32 | triton_4w | 1.113 | 1.26x | 1.49e-08 |
-| softmax | 32 x 127 | float32 | triton_8w | 1.126 | 1.24x | 1.49e-08 |
-| softmax | 32 x 127 | float32 | torch_compiled | 1.126 | 1.24x | 1.49e-08 |
-| softmax | 1024 x 1024 | float32 | torch | 4.267 | 1.00x | 3.73e-09 |
-| softmax | 1024 x 1024 | float32 | torch_decomposed | 16.589 | 0.26x | 3.73e-09 |
-| softmax | 1024 x 1024 | float32 | triton_4w | 3.404 | 1.25x | 3.73e-09 |
-| softmax | 1024 x 1024 | float32 | triton_8w | 3.652 | 1.17x | 7.45e-09 |
-| softmax | 1024 x 1024 | float32 | torch_compiled | 5.905 | 0.72x | 7.45e-09 |
-| softmax | 512 x 4097 | float32 | torch | 13.278 | 1.00x | 1.86e-09 |
-| softmax | 512 x 4097 | float32 | torch_decomposed | 30.720 | 0.43x | 1.86e-09 |
-| softmax | 512 x 4097 | float32 | triton_4w | 6.929 | 1.92x | 1.86e-09 |
-| softmax | 512 x 4097 | float32 | triton_8w | 7.782 | 1.71x | 1.4e-09 |
-| softmax | 512 x 4097 | float32 | torch_compiled | 14.336 | 0.93x | 1.4e-09 |
-| softmax | 16384 x 4096 | float32 | torch | 1047.552 | 1.00x | 1.86e-09 |
-| softmax | 16384 x 4096 | float32 | torch_decomposed | 4021.112 | 0.26x | 1.86e-09 |
-| softmax | 16384 x 4096 | float32 | triton_4w | 1026.833 | 1.02x | 3.73e-09 |
-| softmax | 16384 x 4096 | float32 | triton_8w | 1021.133 | 1.03x | 1.86e-09 |
-| softmax | 16384 x 4096 | float32 | torch_compiled | 1034.171 | 1.01x | 3.73e-09 |
-| softmax | 4 x 32769 | float32 | torch | 9.001 | 1.00x | 1.16e-10 |
-| softmax | 4 x 32769 | float32 | torch_decomposed | 11.605 | 0.78x | 1.16e-10 |
-| softmax | 4 x 32769 | float32 | triton | 2.799 | 3.22x | 1.16e-10 |
-| softmax | 4 x 32769 | float32 | torch_compiled | 40.433 | 0.22x | 1.16e-10 |
-| softmax | 64 x 131072 | float32 | torch | 48.947 | 1.00x | 5.82e-11 |
-| softmax | 64 x 131072 | float32 | torch_decomposed | 242.756 | 0.20x | 5.82e-11 |
-| softmax | 64 x 131072 | float32 | triton | 65.195 | 0.75x | 1.16e-10 |
-| softmax | 64 x 131072 | float32 | torch_compiled | 166.227 | 0.29x | 5.82e-11 |
+| softmax | 32 x 127 | float32 | torch | 1.563 | 1.00x | 7.45e-09 |
+| softmax | 32 x 127 | float32 | torch_decomposed | 6.758 | 0.23x | 7.45e-09 |
+| softmax | 32 x 127 | float32 | triton_4w | 1.399 | 1.12x | 1.49e-08 |
+| softmax | 32 x 127 | float32 | triton_8w | 1.263 | 1.24x | 1.49e-08 |
+| softmax | 32 x 127 | float32 | torch_compiled | 1.283 | 1.22x | 1.49e-08 |
+| softmax | 1024 x 1024 | float32 | torch | 4.403 | 1.00x | 3.73e-09 |
+| softmax | 1024 x 1024 | float32 | torch_decomposed | 16.794 | 0.26x | 3.73e-09 |
+| softmax | 1024 x 1024 | float32 | triton_4w | 3.550 | 1.24x | 3.73e-09 |
+| softmax | 1024 x 1024 | float32 | triton_8w | 3.789 | 1.16x | 7.45e-09 |
+| softmax | 1024 x 1024 | float32 | torch_compiled | 6.075 | 0.72x | 7.45e-09 |
+| softmax | 512 x 4097 | float32 | torch | 13.332 | 1.00x | 1.86e-09 |
+| softmax | 512 x 4097 | float32 | torch_decomposed | 30.822 | 0.43x | 1.86e-09 |
+| softmax | 512 x 4097 | float32 | triton_4w | 7.236 | 1.84x | 1.86e-09 |
+| softmax | 512 x 4097 | float32 | triton_8w | 7.919 | 1.68x | 1.4e-09 |
+| softmax | 512 x 4097 | float32 | torch_compiled | 14.370 | 0.93x | 1.4e-09 |
+| softmax | 16384 x 4096 | float32 | torch | 895.958 | 1.00x | 1.86e-09 |
+| softmax | 16384 x 4096 | float32 | torch_decomposed | 3441.528 | 0.26x | 1.86e-09 |
+| softmax | 16384 x 4096 | float32 | triton_4w | 888.512 | 1.01x | 3.73e-09 |
+| softmax | 16384 x 4096 | float32 | triton_8w | 878.999 | 1.02x | 1.86e-09 |
+| softmax | 16384 x 4096 | float32 | torch_compiled | 893.406 | 1.00x | 3.73e-09 |
+| softmax | 4 x 32769 | float32 | torch | 9.145 | 1.00x | 1.16e-10 |
+| softmax | 4 x 32769 | float32 | torch_decomposed | 11.742 | 0.78x | 1.16e-10 |
+| softmax | 4 x 32769 | float32 | triton | 3.038 | 3.01x | 1.16e-10 |
+| softmax | 4 x 32769 | float32 | torch_compiled | 40.413 | 0.23x | 1.16e-10 |
+| softmax | 64 x 131072 | float32 | torch | 45.773 | 1.00x | 5.82e-11 |
+| softmax | 64 x 131072 | float32 | torch_decomposed | 211.683 | 0.22x | 5.82e-11 |
+| softmax | 64 x 131072 | float32 | triton | 44.442 | 1.03x | 1.16e-10 |
+| softmax | 64 x 131072 | float32 | torch_compiled | 157.218 | 0.29x | 5.82e-11 |
 
 ## rtx4080super-softmax-events.json
 
-NVIDIA GeForce RTX 4080 SUPER; timing: events; cache: warm; UTC: 2026-09-30T08:13:35.797437+00:00. other GPU load before: 24%; other GPU load after: 9%.
+NVIDIA GeForce RTX 4080 SUPER; timing: events; cache: warm; UTC: 2026-09-30T14:02:15.336262+00:00. other GPU load before: 40%; other GPU load after: 4%. GPU warm-up: a 200 ms burst when the last one ended over 250 ms before (13 ran).
 
 | Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| softmax | 32 x 127 | float16 | torch | 7.385 | 1.00x | 0 |
-| softmax | 32 x 127 | float16 | torch_decomposed | 61.781 | 0.12x | 0 |
-| softmax | 32 x 127 | float16 | triton_4w | 22.733 | 0.32x | 1.91e-06 |
-| softmax | 32 x 127 | float16 | triton_8w | 20.863 | 0.35x | 1.91e-06 |
-| softmax | 1024 x 1024 | float16 | torch | 8.363 | 1.00x | 7.63e-06 |
-| softmax | 1024 x 1024 | float16 | torch_decomposed | 62.362 | 0.13x | 7.63e-06 |
-| softmax | 1024 x 1024 | float16 | triton_4w | 21.436 | 0.39x | 7.63e-06 |
-| softmax | 1024 x 1024 | float16 | triton_8w | 22.078 | 0.38x | 7.63e-06 |
-| softmax | 512 x 4097 | float16 | torch | 14.186 | 1.00x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | torch_decomposed | 61.300 | 0.23x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | triton_4w | 21.415 | 0.66x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | triton_8w | 22.084 | 0.64x | 1.91e-06 |
-| softmax | 16384 x 4096 | float16 | torch | 526.848 | 1.00x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | torch_decomposed | 5569.491 | 0.09x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | triton_4w | 513.225 | 1.03x | 7.63e-06 |
-| softmax | 16384 x 4096 | float16 | triton_8w | 509.577 | 1.03x | 7.63e-06 |
-| softmax | 4 x 32769 | float16 | torch | 9.924 | 1.00x | 5.96e-08 |
-| softmax | 4 x 32769 | float16 | torch_decomposed | 59.127 | 0.17x | 5.96e-08 |
-| softmax | 4 x 32769 | float16 | triton | 41.735 | 0.24x | 5.96e-08 |
-| softmax | 64 x 131072 | float16 | torch | 25.090 | 1.00x | 5.96e-08 |
-| softmax | 64 x 131072 | float16 | torch_decomposed | 338.125 | 0.07x | 5.96e-08 |
-| softmax | 64 x 131072 | float16 | triton | 44.842 | 0.56x | 5.96e-08 |
+| softmax | 32 x 127 | float16 | torch | 19.354 | 1.00x | 0 |
+| softmax | 32 x 127 | float16 | torch_decomposed | 160.398 | 0.12x | 0 |
+| softmax | 32 x 127 | float16 | triton_4w | 63.014 | 0.31x | 1.91e-06 |
+| softmax | 32 x 127 | float16 | triton_8w | 56.487 | 0.34x | 1.91e-06 |
+| softmax | 1024 x 1024 | float16 | torch | 17.583 | 1.00x | 7.63e-06 |
+| softmax | 1024 x 1024 | float16 | torch_decomposed | 508.174 | 0.03x | 7.63e-06 |
+| softmax | 1024 x 1024 | float16 | triton_4w | 64.098 | 0.27x | 7.63e-06 |
+| softmax | 1024 x 1024 | float16 | triton_8w | 59.938 | 0.29x | 7.63e-06 |
+| softmax | 512 x 4097 | float16 | torch | 22.835 | 1.00x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | torch_decomposed | 393.990 | 0.06x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | triton_4w | 62.835 | 0.36x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | triton_8w | 61.241 | 0.37x | 1.91e-06 |
+| softmax | 16384 x 4096 | float16 | torch | 461.722 | 1.00x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | torch_decomposed | 4976.879 | 0.09x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | triton_4w | 449.195 | 1.03x | 7.63e-06 |
+| softmax | 16384 x 4096 | float16 | triton_8w | 459.844 | 1.00x | 7.63e-06 |
+| softmax | 4 x 32769 | float16 | torch | 13.445 | 1.00x | 5.96e-08 |
+| softmax | 4 x 32769 | float16 | torch_decomposed | 164.562 | 0.08x | 5.96e-08 |
+| softmax | 4 x 32769 | float16 | triton | 244.087 | 0.06x | 5.96e-08 |
+| softmax | 64 x 131072 | float16 | torch | 28.083 | 1.00x | 5.96e-08 |
+| softmax | 64 x 131072 | float16 | torch_decomposed | 330.402 | 0.08x | 5.96e-08 |
+| softmax | 64 x 131072 | float16 | triton | 122.982 | 0.23x | 5.96e-08 |
 
 ## rtx4080super-training-events.json
 
-NVIDIA GeForce RTX 4080 SUPER; timing: events; cache: warm; UTC: 2026-09-30T08:12:49.791670+00:00. other GPU load before: 25%; other GPU load after: 9%.
+NVIDIA GeForce RTX 4080 SUPER; timing: events; cache: warm; UTC: 2026-09-30T13:45:56.203200+00:00. other GPU load before: 9%; other GPU load after: 7%. GPU warm-up: a 200 ms burst when the last one ended over 250 ms before (66 ran).
 
 | Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| softmax_train | 32 x 127 | float16 | torch | 122.753 | 1.00x | 0.000122 |
-| softmax_train | 32 x 127 | float16 | triton | 312.990 | 0.39x | 6.1e-05 |
-| softmax_train | 1024 x 1024 | float16 | torch | 106.491 | 1.00x | 6.1e-05 |
-| softmax_train | 1024 x 1024 | float16 | triton | 309.965 | 0.34x | 6.1e-05 |
-| softmax_train | 512 x 4097 | float16 | torch | 125.713 | 1.00x | 3.05e-05 |
-| softmax_train | 512 x 4097 | float16 | triton | 328.055 | 0.38x | 1.53e-05 |
-| softmax_train | 16384 x 4096 | float16 | torch | 2057.728 | 1.00x | 3.05e-05 |
-| softmax_train | 16384 x 4096 | float16 | triton | 1260.646 | 1.63x | 6.1e-05 |
-| softmax_train | 4 x 32769 | float16 | torch | 123.290 | 1.00x | 9.54e-07 |
-| softmax_train | 4 x 32769 | float16 | triton | 370.517 | 0.33x | 9.54e-07 |
-| softmax_train | 64 x 131072 | float16 | torch | 158.242 | 1.00x | 9.54e-07 |
-| softmax_train | 64 x 131072 | float16 | triton | 386.652 | 0.41x | 9.54e-07 |
-| rmsnorm_train | 32 x 127 | float16 | torch | 532.491 | 1.00x | 0 |
-| rmsnorm_train | 32 x 127 | float16 | torch_rms_norm | 318.301 | 1.67x | 0 |
-| rmsnorm_train | 32 x 127 | float16 | triton | 469.470 | 1.13x | 0 |
-| rmsnorm_train | 1024 x 1024 | float16 | torch | 513.266 | 1.00x | 0.00391 |
-| rmsnorm_train | 1024 x 1024 | float16 | torch_rms_norm | 296.207 | 1.73x | 0.00195 |
-| rmsnorm_train | 1024 x 1024 | float16 | triton | 443.699 | 1.16x | 0.00195 |
-| rmsnorm_train | 512 x 4097 | float16 | torch | 518.451 | 1.00x | 0.00195 |
-| rmsnorm_train | 512 x 4097 | float16 | torch_rms_norm | 299.622 | 1.73x | 0.00195 |
-| rmsnorm_train | 512 x 4097 | float16 | triton | 453.290 | 1.14x | 0.00195 |
-| rmsnorm_train | 16384 x 4096 | float16 | torch | 21159.121 | 1.00x | 0.00391 |
-| rmsnorm_train | 16384 x 4096 | float16 | torch_rms_norm | 9723.870 | 2.18x | 0.00391 |
-| rmsnorm_train | 16384 x 4096 | float16 | triton | 2423.125 | 8.73x | 0.00391 |
-| rmsnorm_train | 4 x 32769 | float16 | torch | 532.533 | 1.00x | 0.00195 |
-| rmsnorm_train | 4 x 32769 | float16 | torch_rms_norm | 326.785 | 1.63x | 0.000977 |
-| rmsnorm_train | 4 x 32769 | float16 | triton | 519.168 | 1.03x | 0.00195 |
-| rmsnorm_train | 64 x 131072 | float16 | torch | 1868.015 | 1.00x | 0.00195 |
-| rmsnorm_train | 64 x 131072 | float16 | torch_rms_norm | 1050.897 | 1.78x | 0.00391 |
-| rmsnorm_train | 64 x 131072 | float16 | triton | 529.715 | 3.53x | 0.00195 |
+| softmax_train | 32 x 127 | float16 | torch | 428.361 | 1.00x | 0.000122 |
+| softmax_train | 32 x 127 | float16 | triton | 976.179 | 0.44x | 6.1e-05 |
+| softmax_train | 1024 x 1024 | float16 | torch | 373.543 | 1.00x | 6.1e-05 |
+| softmax_train | 1024 x 1024 | float16 | triton | 830.845 | 0.45x | 6.1e-05 |
+| softmax_train | 512 x 4097 | float16 | torch | 383.351 | 1.00x | 3.05e-05 |
+| softmax_train | 512 x 4097 | float16 | triton | 759.945 | 0.50x | 1.53e-05 |
+| softmax_train | 16384 x 4096 | float16 | torch | 1813.880 | 1.00x | 3.05e-05 |
+| softmax_train | 16384 x 4096 | float16 | triton | 1125.854 | 1.61x | 6.1e-05 |
+| softmax_train | 4 x 32769 | float16 | torch | 414.619 | 1.00x | 9.54e-07 |
+| softmax_train | 4 x 32769 | float16 | triton | 1065.034 | 0.39x | 9.54e-07 |
+| softmax_train | 64 x 131072 | float16 | torch | 389.870 | 1.00x | 9.54e-07 |
+| softmax_train | 64 x 131072 | float16 | triton | 1108.753 | 0.35x | 9.54e-07 |
+| rmsnorm_train | 32 x 127 | float16 | torch | 1592.906 | 1.00x | 0 |
+| rmsnorm_train | 32 x 127 | float16 | torch_rms_norm | 876.383 | 1.82x | 0 |
+| rmsnorm_train | 32 x 127 | float16 | triton | 1115.181 | 1.43x | 0 |
+| rmsnorm_train | 1024 x 1024 | float16 | torch | 1630.618 | 1.00x | 0.00391 |
+| rmsnorm_train | 1024 x 1024 | float16 | torch_rms_norm | 962.834 | 1.69x | 0.00195 |
+| rmsnorm_train | 1024 x 1024 | float16 | triton | 1363.792 | 1.20x | 0.00195 |
+| rmsnorm_train | 512 x 4097 | float16 | torch | 1530.612 | 1.00x | 0.00195 |
+| rmsnorm_train | 512 x 4097 | float16 | torch_rms_norm | 861.286 | 1.78x | 0.00195 |
+| rmsnorm_train | 512 x 4097 | float16 | triton | 1084.110 | 1.41x | 0.00195 |
+| rmsnorm_train | 16384 x 4096 | float16 | torch | 18027.144 | 1.00x | 0.00391 |
+| rmsnorm_train | 16384 x 4096 | float16 | torch_rms_norm | 8280.917 | 2.18x | 0.00391 |
+| rmsnorm_train | 16384 x 4096 | float16 | triton | 2210.304 | 8.16x | 0.00391 |
+| rmsnorm_train | 4 x 32769 | float16 | torch | 1678.677 | 1.00x | 0.00195 |
+| rmsnorm_train | 4 x 32769 | float16 | torch_rms_norm | 960.830 | 1.75x | 0.000977 |
+| rmsnorm_train | 4 x 32769 | float16 | triton | 1295.189 | 1.30x | 0.00195 |
+| rmsnorm_train | 64 x 131072 | float16 | torch | 1780.492 | 1.00x | 0.00195 |
+| rmsnorm_train | 64 x 131072 | float16 | torch_rms_norm | 943.582 | 1.89x | 0.00391 |
+| rmsnorm_train | 64 x 131072 | float16 | triton | 1264.175 | 1.41x | 0.00195 |
+| matmul_train | 127 x 255 x 65 | float16 | torch | 421.206 | 1.00x | 0.00781 |
+| matmul_train | 127 x 255 x 65 | float16 | triton | 1081.012 | 0.39x | 0.00781 |
+| matmul_train | 512 x 512 x 512 | float16 | torch | 363.614 | 1.00x | 0.0625 |
+| matmul_train | 512 x 512 x 512 | float16 | triton | 1171.760 | 0.31x | 0.0625 |
+| matmul_train | 1024 x 1024 x 1024 | float16 | torch | 458.859 | 1.00x | 0.125 |
+| matmul_train | 1024 x 1024 x 1024 | float16 | triton | 1128.709 | 0.41x | 0.125 |
+| matmul_train | 4096 x 4096 x 4096 | float16 | torch | 4267.580 | 1.00x | 0.25 |
+| matmul_train | 4096 x 4096 x 4096 | float16 | triton | 4055.825 | 1.05x | 0.25 |
+| matmul_train | 16384 x 1024 x 1024 | float16 | torch | 1092.676 | 1.00x | 0.5 |
+| matmul_train | 16384 x 1024 x 1024 | float16 | triton | 1252.544 | 0.87x | 0.5 |
 
 ## rtx4080super-training-fp16.json
 
-NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T08:12:24.432023+00:00. other GPU load before: 19%; other GPU load after: 9%.
+NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T13:43:42.611856+00:00. other GPU load before: 28%; other GPU load after: 7%. GPU warm-up: a 200 ms burst when the last one ended over 250 ms before (31 ran).
 
 | Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| softmax_train | 32 x 127 | float16 | torch | 3.514 | 1.00x | 0.000122 |
-| softmax_train | 32 x 127 | float16 | triton | 2.070 | 1.70x | 6.1e-05 |
-| softmax_train | 32 x 127 | float16 | torch_compiled | 2.082 | 1.69x | 6.1e-05 |
-| softmax_train | 1024 x 1024 | float16 | torch | 9.523 | 1.00x | 6.1e-05 |
-| softmax_train | 1024 x 1024 | float16 | triton | 4.779 | 1.99x | 6.1e-05 |
-| softmax_train | 1024 x 1024 | float16 | torch_compiled | 10.581 | 0.90x | 6.1e-05 |
-| softmax_train | 512 x 4097 | float16 | torch | 23.415 | 1.00x | 3.05e-05 |
-| softmax_train | 512 x 4097 | float16 | triton | 11.230 | 2.09x | 1.53e-05 |
-| softmax_train | 512 x 4097 | float16 | torch_compiled | 22.391 | 1.05x | 1.53e-05 |
-| softmax_train | 16384 x 4096 | float16 | torch | 2008.644 | 1.00x | 3.05e-05 |
-| softmax_train | 16384 x 4096 | float16 | triton | 1258.189 | 1.60x | 6.1e-05 |
-| softmax_train | 16384 x 4096 | float16 | torch_compiled | 1257.165 | 1.60x | 6.1e-05 |
-| softmax_train | 4 x 32769 | float16 | torch | 14.711 | 1.00x | 9.54e-07 |
-| softmax_train | 4 x 32769 | float16 | triton | 5.086 | 2.89x | 9.54e-07 |
-| softmax_train | 4 x 32769 | float16 | torch_compiled | 72.943 | 0.20x | 9.54e-07 |
-| softmax_train | 64 x 131072 | float16 | torch | 116.292 | 1.00x | 9.54e-07 |
-| softmax_train | 64 x 131072 | float16 | triton | 68.332 | 1.70x | 9.54e-07 |
-| softmax_train | 64 x 131072 | float16 | torch_compiled | 416.700 | 0.28x | 9.54e-07 |
-| rmsnorm_train | 32 x 127 | float16 | torch | 42.257 | 1.00x | 0 |
-| rmsnorm_train | 32 x 127 | float16 | torch_rms_norm | 16.759 | 2.52x | 0 |
-| rmsnorm_train | 32 x 127 | float16 | triton | 6.076 | 6.96x | 0 |
-| rmsnorm_train | 32 x 127 | float16 | torch_compiled | 3.618 | 11.68x | 4.77e-07 |
-| rmsnorm_train | 1024 x 1024 | float16 | torch | 87.893 | 1.00x | 0.00391 |
-| rmsnorm_train | 1024 x 1024 | float16 | torch_rms_norm | 41.977 | 2.09x | 0.00195 |
-| rmsnorm_train | 1024 x 1024 | float16 | triton | 14.565 | 6.03x | 0.00195 |
-| rmsnorm_train | 1024 x 1024 | float16 | torch_compiled | 21.811 | 4.03x | 0.00391 |
-| rmsnorm_train | 512 x 4097 | float16 | torch | 217.805 | 1.00x | 0.00195 |
-| rmsnorm_train | 512 x 4097 | float16 | torch_rms_norm | 86.767 | 2.51x | 0.00195 |
-| rmsnorm_train | 512 x 4097 | float16 | triton | 27.334 | 7.97x | 0.00195 |
-| rmsnorm_train | 512 x 4097 | float16 | torch_compiled | 49.625 | 4.39x | 0.00195 |
-| rmsnorm_train | 16384 x 4096 | float16 | torch | 21049.611 | 1.00x | 0.00391 |
-| rmsnorm_train | 16384 x 4096 | float16 | torch_rms_norm | 9595.389 | 2.19x | 0.00391 |
-| rmsnorm_train | 16384 x 4096 | float16 | triton | 2356.565 | 8.93x | 0.00391 |
-| rmsnorm_train | 16384 x 4096 | float16 | torch_compiled | 2791.595 | 7.54x | 0.00391 |
-| rmsnorm_train | 4 x 32769 | float16 | torch | 41.088 | 1.00x | 0.00195 |
-| rmsnorm_train | 4 x 32769 | float16 | torch_rms_norm | 86.903 | 0.47x | 0.000977 |
-| rmsnorm_train | 4 x 32769 | float16 | triton | 10.069 | 4.08x | 0.00195 |
-| rmsnorm_train | 4 x 32769 | float16 | torch_compiled | 194.253 | 0.21x | 0.00195 |
-| rmsnorm_train | 64 x 131072 | float16 | torch | 1860.028 | 1.00x | 0.00195 |
-| rmsnorm_train | 64 x 131072 | float16 | torch_rms_norm | 1019.051 | 1.83x | 0.00391 |
-| rmsnorm_train | 64 x 131072 | float16 | triton | 183.125 | 10.16x | 0.00195 |
-| rmsnorm_train | 64 x 131072 | float16 | torch_compiled | 437.385 | 4.25x | 0.00195 |
+| softmax_train | 32 x 127 | float16 | torch | 3.782 | 1.00x | 0.000122 |
+| softmax_train | 32 x 127 | float16 | triton | 2.219 | 1.70x | 6.1e-05 |
+| softmax_train | 32 x 127 | float16 | torch_compiled | 2.219 | 1.70x | 6.1e-05 |
+| softmax_train | 1024 x 1024 | float16 | torch | 10.001 | 1.00x | 6.1e-05 |
+| softmax_train | 1024 x 1024 | float16 | triton | 5.382 | 1.86x | 6.1e-05 |
+| softmax_train | 1024 x 1024 | float16 | torch_compiled | 10.612 | 0.94x | 6.1e-05 |
+| softmax_train | 512 x 4097 | float16 | torch | 23.893 | 1.00x | 3.05e-05 |
+| softmax_train | 512 x 4097 | float16 | triton | 11.871 | 2.01x | 1.53e-05 |
+| softmax_train | 512 x 4097 | float16 | torch_compiled | 23.211 | 1.03x | 1.53e-05 |
+| softmax_train | 16384 x 4096 | float16 | torch | 1850.334 | 1.00x | 3.05e-05 |
+| softmax_train | 16384 x 4096 | float16 | triton | 1161.216 | 1.59x | 6.1e-05 |
+| softmax_train | 16384 x 4096 | float16 | torch_compiled | 1186.543 | 1.56x | 6.1e-05 |
+| softmax_train | 4 x 32769 | float16 | torch | 15.257 | 1.00x | 9.54e-07 |
+| softmax_train | 4 x 32769 | float16 | triton | 5.769 | 2.64x | 9.54e-07 |
+| softmax_train | 4 x 32769 | float16 | torch_compiled | 71.574 | 0.21x | 9.54e-07 |
+| softmax_train | 64 x 131072 | float16 | torch | 117.827 | 1.00x | 9.54e-07 |
+| softmax_train | 64 x 131072 | float16 | triton | 53.419 | 2.21x | 9.54e-07 |
+| softmax_train | 64 x 131072 | float16 | torch_compiled | 373.043 | 0.32x | 9.54e-07 |
+| rmsnorm_train | 32 x 127 | float16 | torch | 33.241 | 1.00x | 0 |
+| rmsnorm_train | 32 x 127 | float16 | torch_rms_norm | 16.828 | 1.98x | 0 |
+| rmsnorm_train | 32 x 127 | float16 | triton | 4.301 | 7.73x | 0 |
+| rmsnorm_train | 32 x 127 | float16 | torch_compiled | 3.823 | 8.70x | 4.77e-07 |
+| rmsnorm_train | 1024 x 1024 | float16 | torch | 89.461 | 1.00x | 0.00391 |
+| rmsnorm_train | 1024 x 1024 | float16 | torch_rms_norm | 43.552 | 2.05x | 0.00195 |
+| rmsnorm_train | 1024 x 1024 | float16 | triton | 15.258 | 5.86x | 0.00195 |
+| rmsnorm_train | 1024 x 1024 | float16 | torch_compiled | 23.006 | 3.89x | 0.00391 |
+| rmsnorm_train | 512 x 4097 | float16 | torch | 186.368 | 1.00x | 0.00195 |
+| rmsnorm_train | 512 x 4097 | float16 | torch_rms_norm | 88.883 | 2.10x | 0.00195 |
+| rmsnorm_train | 512 x 4097 | float16 | triton | 26.010 | 7.17x | 0.00195 |
+| rmsnorm_train | 512 x 4097 | float16 | torch_compiled | 50.313 | 3.70x | 0.00195 |
+| rmsnorm_train | 16384 x 4096 | float16 | torch | 19226.282 | 1.00x | 0.00391 |
+| rmsnorm_train | 16384 x 4096 | float16 | torch_rms_norm | 8772.881 | 2.19x | 0.00391 |
+| rmsnorm_train | 16384 x 4096 | float16 | triton | 2209.382 | 8.70x | 0.00391 |
+| rmsnorm_train | 16384 x 4096 | float16 | torch_compiled | 2525.867 | 7.61x | 0.00391 |
+| rmsnorm_train | 4 x 32769 | float16 | torch | 49.732 | 1.00x | 0.00195 |
+| rmsnorm_train | 4 x 32769 | float16 | torch_rms_norm | 93.491 | 0.53x | 0.000977 |
+| rmsnorm_train | 4 x 32769 | float16 | triton | 10.131 | 4.91x | 0.00195 |
+| rmsnorm_train | 4 x 32769 | float16 | torch_compiled | 169.165 | 0.29x | 0.00195 |
+| rmsnorm_train | 64 x 131072 | float16 | torch | 1743.599 | 1.00x | 0.00195 |
+| rmsnorm_train | 64 x 131072 | float16 | torch_rms_norm | 973.311 | 1.79x | 0.00391 |
+| rmsnorm_train | 64 x 131072 | float16 | triton | 148.681 | 11.73x | 0.00195 |
+| rmsnorm_train | 64 x 131072 | float16 | torch_compiled | 449.434 | 3.88x | 0.00195 |
+| matmul_train | 127 x 255 x 65 | float16 | torch | 10.035 | 1.00x | 0.00781 |
+| matmul_train | 127 x 255 x 65 | float16 | triton | 10.581 | 0.95x | 0.00781 |
+| matmul_train | 127 x 255 x 65 | float16 | torch_compiled | 9.762 | 1.03x | 0.00781 |
+| matmul_train | 512 x 512 x 512 | float16 | torch | 16.412 | 1.00x | 0.0625 |
+| matmul_train | 512 x 512 x 512 | float16 | triton | 15.994 | 1.03x | 0.0625 |
+| matmul_train | 512 x 512 x 512 | float16 | torch_compiled | 16.657 | 0.99x | 0.0625 |
+| matmul_train | 1024 x 1024 x 1024 | float16 | torch | 88.576 | 1.00x | 0.125 |
+| matmul_train | 1024 x 1024 x 1024 | float16 | triton | 96.051 | 0.92x | 0.125 |
+| matmul_train | 1024 x 1024 x 1024 | float16 | torch_compiled | 84.924 | 1.04x | 0.125 |
+| matmul_train | 4096 x 4096 x 4096 | float16 | torch | 4358.202 | 1.00x | 0.25 |
+| matmul_train | 4096 x 4096 x 4096 | float16 | triton | 4295.202 | 1.01x | 0.25 |
+| matmul_train | 4096 x 4096 x 4096 | float16 | torch_compiled | 4389.513 | 0.99x | 0.25 |
+| matmul_train | 16384 x 1024 x 1024 | float16 | torch | 1139.533 | 1.00x | 0.5 |
+| matmul_train | 16384 x 1024 x 1024 | float16 | triton | 1172.378 | 0.97x | 0.5 |
+| matmul_train | 16384 x 1024 x 1024 | float16 | torch_compiled | 1148.314 | 0.99x | 0.5 |
 
 ## rtx4080super-triton-fp16-cold.json
 
-NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: cold; UTC: 2026-09-30T08:11:58.495657+00:00. other GPU load before: 9%; other GPU load after: 8%.
+NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: cold; UTC: 2026-09-30T13:42:23.700066+00:00. other GPU load before: 4%; other GPU load after: 6%. GPU warm-up: a 200 ms burst when the last one ended over 250 ms before (64 ran).
 
 | Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| add | 257 | float16 | torch | 3.761 | 1.00x | 0 |
-| add | 257 | float16 | triton_256 | 3.657 | 1.03x | 0 |
-| add | 257 | float16 | triton_1024 | 3.760 | 1.00x | 0 |
+| add | 257 | float16 | torch | 3.789 | 1.00x | 0 |
+| add | 257 | float16 | triton_256 | 3.721 | 1.02x | 0 |
+| add | 257 | float16 | triton_1024 | 3.733 | 1.01x | 0 |
 | add | 1048576 | float16 | torch | 15.497 | 1.00x | 0 |
-| add | 1048576 | float16 | triton_256 | 15.292 | 1.01x | 0 |
-| add | 1048576 | float16 | triton_1024 | 15.360 | 1.01x | 0 |
-| add | 16777216 | float16 | torch | 195.038 | 1.00x | 0 |
-| add | 16777216 | float16 | triton_256 | 197.223 | 0.99x | 0 |
-| add | 16777216 | float16 | triton_1024 | 199.305 | 0.98x | 0 |
-| row_sum | 32 x 127 | float16 | torch | 4.511 | 1.00x | 0 |
-| row_sum | 32 x 127 | float16 | triton | 3.891 | 1.16x | 0 |
-| row_sum | 1024 x 1024 | float16 | torch | 10.069 | 1.00x | 7.63e-06 |
-| row_sum | 1024 x 1024 | float16 | triton | 9.591 | 1.05x | 7.63e-06 |
-| row_sum | 512 x 4097 | float16 | torch | 18.705 | 1.00x | 1.53e-05 |
-| row_sum | 512 x 4097 | float16 | triton | 14.746 | 1.27x | 1.53e-05 |
-| row_sum | 16384 x 4096 | float16 | torch | 308.838 | 1.00x | 1.53e-05 |
-| row_sum | 16384 x 4096 | float16 | triton | 310.306 | 1.00x | 1.53e-05 |
-| row_sum | 4 x 32769 | float16 | torch | 7.289 | 1.00x | 1.53e-05 |
-| row_sum | 4 x 32769 | float16 | triton | 7.108 | 1.03x | 1.53e-05 |
-| row_sum | 64 x 131072 | float16 | torch | 58.061 | 1.00x | 9.16e-05 |
-| row_sum | 64 x 131072 | float16 | triton | 47.479 | 1.22x | 0.000122 |
-| softmax | 32 x 127 | float16 | torch | 4.613 | 1.00x | 0 |
-| softmax | 32 x 127 | float16 | torch_decomposed | 12.597 | 0.37x | 0 |
-| softmax | 32 x 127 | float16 | triton_4w | 4.113 | 1.12x | 9.54e-07 |
-| softmax | 32 x 127 | float16 | triton_8w | 4.107 | 1.12x | 9.54e-07 |
-| softmax | 1024 x 1024 | float16 | torch | 15.163 | 1.00x | 3.81e-06 |
-| softmax | 1024 x 1024 | float16 | torch_decomposed | 39.936 | 0.38x | 3.81e-06 |
-| softmax | 1024 x 1024 | float16 | triton_4w | 9.455 | 1.60x | 3.81e-06 |
-| softmax | 1024 x 1024 | float16 | triton_8w | 9.398 | 1.61x | 3.81e-06 |
-| softmax | 512 x 4097 | float16 | torch | 25.668 | 1.00x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | torch_decomposed | 65.092 | 0.39x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | triton_4w | 18.610 | 1.38x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | triton_8w | 28.467 | 0.90x | 1.91e-06 |
-| softmax | 16384 x 4096 | float16 | torch | 545.041 | 1.00x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | torch_decomposed | 5418.837 | 0.10x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | triton_4w | 510.225 | 1.07x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | triton_8w | 493.978 | 1.10x | 3.81e-06 |
-| softmax | 4 x 32769 | float16 | torch | 12.971 | 1.00x | 5.96e-08 |
-| softmax | 4 x 32769 | float16 | torch_decomposed | 29.935 | 0.43x | 0 |
-| softmax | 4 x 32769 | float16 | triton | 7.134 | 1.82x | 0 |
-| softmax | 64 x 131072 | float16 | torch | 66.082 | 1.00x | 1.19e-07 |
-| softmax | 64 x 131072 | float16 | torch_decomposed | 295.185 | 0.22x | 5.96e-08 |
-| softmax | 64 x 131072 | float16 | triton | 62.123 | 1.06x | 5.96e-08 |
-| rmsnorm | 32 x 127 | float16 | torch | 16.486 | 1.00x | 0.000122 |
-| rmsnorm | 32 x 127 | float16 | torch_rms_norm | 13.005 | 1.27x | 0.000122 |
-| rmsnorm | 32 x 127 | float16 | triton | 4.075 | 4.05x | 0 |
-| rmsnorm | 1024 x 1024 | float16 | torch | 59.187 | 1.00x | 0.00195 |
-| rmsnorm | 1024 x 1024 | float16 | torch_rms_norm | 46.046 | 1.29x | 0.00391 |
-| rmsnorm | 1024 x 1024 | float16 | triton | 16.350 | 3.62x | 0.00195 |
-| rmsnorm | 512 x 4097 | float16 | torch | 96.597 | 1.00x | 0.00195 |
-| rmsnorm | 512 x 4097 | float16 | torch_rms_norm | 102.434 | 0.94x | 0.00391 |
-| rmsnorm | 512 x 4097 | float16 | triton | 26.829 | 3.60x | 0.00195 |
-| rmsnorm | 16384 x 4096 | float16 | torch | 7136.836 | 1.00x | 0.00391 |
-| rmsnorm | 16384 x 4096 | float16 | torch_rms_norm | 4724.634 | 1.51x | 0.00781 |
-| rmsnorm | 16384 x 4096 | float16 | triton | 743.663 | 9.60x | 0.00781 |
-| rmsnorm | 4 x 32769 | float16 | torch | 25.395 | 1.00x | 0.00391 |
-| rmsnorm | 4 x 32769 | float16 | torch_rms_norm | 44.100 | 0.58x | 0.00391 |
-| rmsnorm | 4 x 32769 | float16 | triton | 8.670 | 2.93x | 0.00195 |
-| rmsnorm | 64 x 131072 | float16 | torch | 510.396 | 1.00x | 0.00391 |
-| rmsnorm | 64 x 131072 | float16 | torch_rms_norm | 473.156 | 1.08x | 0.00391 |
-| rmsnorm | 64 x 131072 | float16 | triton | 140.015 | 3.65x | 0.00391 |
-| matmul | 127 x 255 x 65 | float16 | torch | 7.612 | 1.00x | 0.000977 |
-| matmul | 127 x 255 x 65 | float16 | triton_fixed | 5.741 | 1.33x | 0.00781 |
-| matmul | 127 x 255 x 65 | float16 | triton_tuned | 5.782 | 1.32x | 0.00781 |
-| matmul | 512 x 512 x 512 | float16 | torch | 8.814 | 1.00x | 0.0625 |
-| matmul | 512 x 512 x 512 | float16 | triton_fixed | 15.266 | 0.58x | 0.0625 |
-| matmul | 512 x 512 x 512 | float16 | triton_tuned | 11.485 | 0.77x | 0.0625 |
-| matmul | 1024 x 1024 x 1024 | float16 | torch | 40.721 | 1.00x | 0.0625 |
-| matmul | 1024 x 1024 x 1024 | float16 | triton_fixed | 40.482 | 1.01x | 0.0625 |
-| matmul | 1024 x 1024 x 1024 | float16 | triton_tuned | 30.379 | 1.34x | 0.0625 |
-| matmul | 4096 x 4096 x 4096 | float16 | torch | 1559.893 | 1.00x | 0.25 |
-| matmul | 4096 x 4096 x 4096 | float16 | triton_fixed | 2073.668 | 0.75x | 0.25 |
-| matmul | 4096 x 4096 x 4096 | float16 | triton_tuned | 1456.538 | 1.07x | 0.25 |
+| add | 1048576 | float16 | triton_256 | 15.531 | 1.00x | 0 |
+| add | 1048576 | float16 | triton_1024 | 15.155 | 1.02x | 0 |
+| add | 16777216 | float16 | torch | 186.778 | 1.00x | 0 |
+| add | 16777216 | float16 | triton_256 | 189.747 | 0.98x | 0 |
+| add | 16777216 | float16 | triton_1024 | 184.218 | 1.01x | 0 |
+| row_sum | 32 x 127 | float16 | torch | 4.597 | 1.00x | 0 |
+| row_sum | 32 x 127 | float16 | triton | 3.877 | 1.19x | 0 |
+| row_sum | 1024 x 1024 | float16 | torch | 10.206 | 1.00x | 7.63e-06 |
+| row_sum | 1024 x 1024 | float16 | triton | 9.626 | 1.06x | 7.63e-06 |
+| row_sum | 512 x 4097 | float16 | torch | 18.126 | 1.00x | 1.53e-05 |
+| row_sum | 512 x 4097 | float16 | triton | 14.166 | 1.28x | 1.53e-05 |
+| row_sum | 16384 x 4096 | float16 | torch | 302.524 | 1.00x | 1.53e-05 |
+| row_sum | 16384 x 4096 | float16 | triton | 289.655 | 1.04x | 1.53e-05 |
+| row_sum | 4 x 32769 | float16 | torch | 7.108 | 1.00x | 1.53e-05 |
+| row_sum | 4 x 32769 | float16 | triton | 6.975 | 1.02x | 1.53e-05 |
+| row_sum | 64 x 131072 | float16 | torch | 58.266 | 1.00x | 9.16e-05 |
+| row_sum | 64 x 131072 | float16 | triton | 39.083 | 1.49x | 0.000122 |
+| softmax | 32 x 127 | float16 | torch | 4.546 | 1.00x | 0 |
+| softmax | 32 x 127 | float16 | torch_decomposed | 12.459 | 0.36x | 0 |
+| softmax | 32 x 127 | float16 | triton_4w | 4.070 | 1.12x | 9.54e-07 |
+| softmax | 32 x 127 | float16 | triton_8w | 4.074 | 1.12x | 9.54e-07 |
+| softmax | 1024 x 1024 | float16 | torch | 12.186 | 1.00x | 3.81e-06 |
+| softmax | 1024 x 1024 | float16 | torch_decomposed | 37.888 | 0.32x | 3.81e-06 |
+| softmax | 1024 x 1024 | float16 | triton_4w | 9.830 | 1.24x | 3.81e-06 |
+| softmax | 1024 x 1024 | float16 | triton_8w | 9.967 | 1.22x | 3.81e-06 |
+| softmax | 512 x 4097 | float16 | torch | 25.463 | 1.00x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | torch_decomposed | 65.877 | 0.39x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | triton_4w | 19.046 | 1.34x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | triton_8w | 19.866 | 1.28x | 1.91e-06 |
+| softmax | 16384 x 4096 | float16 | torch | 490.871 | 1.00x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | torch_decomposed | 5034.633 | 0.10x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | triton_4w | 494.285 | 0.99x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | triton_8w | 469.367 | 1.05x | 3.81e-06 |
+| softmax | 4 x 32769 | float16 | torch | 12.943 | 1.00x | 5.96e-08 |
+| softmax | 4 x 32769 | float16 | torch_decomposed | 20.514 | 0.63x | 0 |
+| softmax | 4 x 32769 | float16 | triton | 7.270 | 1.78x | 0 |
+| softmax | 64 x 131072 | float16 | torch | 68.574 | 1.00x | 1.19e-07 |
+| softmax | 64 x 131072 | float16 | torch_decomposed | 303.206 | 0.23x | 5.96e-08 |
+| softmax | 64 x 131072 | float16 | triton | 70.451 | 0.97x | 5.96e-08 |
+| rmsnorm | 32 x 127 | float16 | torch | 16.111 | 1.00x | 0.000122 |
+| rmsnorm | 32 x 127 | float16 | torch_rms_norm | 13.039 | 1.24x | 0.000122 |
+| rmsnorm | 32 x 127 | float16 | triton | 4.074 | 3.95x | 0 |
+| rmsnorm | 1024 x 1024 | float16 | torch | 65.570 | 1.00x | 0.00195 |
+| rmsnorm | 1024 x 1024 | float16 | torch_rms_norm | 43.895 | 1.49x | 0.00391 |
+| rmsnorm | 1024 x 1024 | float16 | triton | 15.258 | 4.30x | 0.00195 |
+| rmsnorm | 512 x 4097 | float16 | torch | 99.294 | 1.00x | 0.00195 |
+| rmsnorm | 512 x 4097 | float16 | torch_rms_norm | 86.562 | 1.15x | 0.00391 |
+| rmsnorm | 512 x 4097 | float16 | triton | 26.351 | 3.77x | 0.00195 |
+| rmsnorm | 16384 x 4096 | float16 | torch | 6758.707 | 1.00x | 0.00391 |
+| rmsnorm | 16384 x 4096 | float16 | torch_rms_norm | 4524.988 | 1.49x | 0.00781 |
+| rmsnorm | 16384 x 4096 | float16 | triton | 701.747 | 9.63x | 0.00781 |
+| rmsnorm | 4 x 32769 | float16 | torch | 25.532 | 1.00x | 0.00391 |
+| rmsnorm | 4 x 32769 | float16 | torch_rms_norm | 52.224 | 0.49x | 0.00391 |
+| rmsnorm | 4 x 32769 | float16 | triton | 8.499 | 3.00x | 0.00195 |
+| rmsnorm | 64 x 131072 | float16 | torch | 479.778 | 1.00x | 0.00391 |
+| rmsnorm | 64 x 131072 | float16 | torch_rms_norm | 421.513 | 1.14x | 0.00391 |
+| rmsnorm | 64 x 131072 | float16 | triton | 140.527 | 3.41x | 0.00391 |
+| matmul | 127 x 255 x 65 | float16 | torch | 7.509 | 1.00x | 0.000977 |
+| matmul | 127 x 255 x 65 | float16 | triton_fixed | 5.649 | 1.33x | 0.00781 |
+| matmul | 127 x 255 x 65 | float16 | triton_tuned | 5.915 | 1.27x | 0.00781 |
+| matmul | 512 x 512 x 512 | float16 | torch | 8.977 | 1.00x | 0.0625 |
+| matmul | 512 x 512 x 512 | float16 | triton_fixed | 15.260 | 0.59x | 0.0625 |
+| matmul | 512 x 512 x 512 | float16 | triton_tuned | 11.095 | 0.81x | 0.0625 |
+| matmul | 1024 x 1024 x 1024 | float16 | torch | 40.687 | 1.00x | 0.0625 |
+| matmul | 1024 x 1024 x 1024 | float16 | triton_fixed | 40.209 | 1.01x | 0.0625 |
+| matmul | 1024 x 1024 x 1024 | float16 | triton_tuned | 30.618 | 1.33x | 0.0625 |
+| matmul | 4096 x 4096 x 4096 | float16 | torch | 1450.086 | 1.00x | 0.25 |
+| matmul | 4096 x 4096 x 4096 | float16 | triton_fixed | 1872.555 | 0.77x | 0.25 |
+| matmul | 4096 x 4096 x 4096 | float16 | triton_tuned | 1351.270 | 1.07x | 0.25 |
 
 ## rtx4080super-triton-fp16.json
 
-NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T08:11:38.942131+00:00. other GPU load before: 10%; other GPU load after: 8%.
+NVIDIA GeForce RTX 4080 SUPER; timing: graph; cache: warm; UTC: 2026-09-30T13:35:42.699484+00:00. other GPU load before: 18%; other GPU load after: 5%. GPU warm-up: a 200 ms burst when the last one ended over 250 ms before (18 ran).
 
 | Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| add | 257 | float16 | torch | 0.977 | 1.00x | 0 |
-| add | 257 | float16 | triton_256 | 0.839 | 1.16x | 0 |
-| add | 257 | float16 | triton_1024 | 0.887 | 1.10x | 0 |
-| add | 1048576 | float16 | torch | 2.287 | 1.00x | 0 |
-| add | 1048576 | float16 | triton_256 | 2.821 | 0.81x | 0 |
-| add | 1048576 | float16 | triton_1024 | 2.253 | 1.02x | 0 |
-| add | 16777216 | float16 | torch | 185.037 | 1.00x | 0 |
-| add | 16777216 | float16 | triton_256 | 153.054 | 1.21x | 0 |
-| add | 16777216 | float16 | triton_1024 | 170.735 | 1.08x | 0 |
-| row_sum | 32 x 127 | float16 | torch | 1.594 | 1.00x | 0 |
-| row_sum | 32 x 127 | float16 | triton | 0.956 | 1.67x | 0 |
-| row_sum | 1024 x 1024 | float16 | torch | 2.150 | 1.00x | 7.63e-06 |
-| row_sum | 1024 x 1024 | float16 | triton | 1.626 | 1.32x | 7.63e-06 |
-| row_sum | 512 x 4097 | float16 | torch | 3.925 | 1.00x | 1.53e-05 |
-| row_sum | 512 x 4097 | float16 | triton | 2.355 | 1.67x | 1.53e-05 |
-| row_sum | 16384 x 4096 | float16 | torch | 235.247 | 1.00x | 1.53e-05 |
-| row_sum | 16384 x 4096 | float16 | triton | 219.648 | 1.07x | 1.53e-05 |
-| row_sum | 4 x 32769 | float16 | torch | 2.799 | 1.00x | 1.53e-05 |
-| row_sum | 4 x 32769 | float16 | triton | 2.550 | 1.10x | 1.53e-05 |
-| row_sum | 64 x 131072 | float16 | torch | 13.790 | 1.00x | 9.16e-05 |
-| row_sum | 64 x 131072 | float16 | triton | 5.858 | 2.35x | 0.000122 |
-| softmax | 32 x 127 | float16 | torch | 1.502 | 1.00x | 0 |
-| softmax | 32 x 127 | float16 | torch_decomposed | 9.216 | 0.16x | 0 |
-| softmax | 32 x 127 | float16 | triton_4w | 1.126 | 1.33x | 9.54e-07 |
-| softmax | 32 x 127 | float16 | triton_8w | 1.126 | 1.33x | 9.54e-07 |
-| softmax | 1024 x 1024 | float16 | torch | 4.198 | 1.00x | 3.81e-06 |
-| softmax | 1024 x 1024 | float16 | torch_decomposed | 30.447 | 0.14x | 3.81e-06 |
-| softmax | 1024 x 1024 | float16 | triton_4w | 2.423 | 1.73x | 3.81e-06 |
-| softmax | 1024 x 1024 | float16 | triton_8w | 3.345 | 1.26x | 3.81e-06 |
-| softmax | 512 x 4097 | float16 | torch | 12.732 | 1.00x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | torch_decomposed | 41.097 | 0.31x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | triton_4w | 5.045 | 2.52x | 9.54e-07 |
-| softmax | 512 x 4097 | float16 | triton_8w | 5.654 | 2.25x | 1.91e-06 |
-| softmax | 16384 x 4096 | float16 | torch | 503.533 | 1.00x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | torch_decomposed | 5330.944 | 0.09x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | triton_4w | 489.199 | 1.03x | 3.81e-06 |
-| softmax | 16384 x 4096 | float16 | triton_8w | 484.489 | 1.04x | 3.81e-06 |
-| softmax | 4 x 32769 | float16 | torch | 7.885 | 1.00x | 5.96e-08 |
-| softmax | 4 x 32769 | float16 | torch_decomposed | 14.466 | 0.55x | 0 |
-| softmax | 4 x 32769 | float16 | triton | 2.694 | 2.93x | 0 |
-| softmax | 64 x 131072 | float16 | torch | 24.439 | 1.00x | 1.19e-07 |
-| softmax | 64 x 131072 | float16 | torch_decomposed | 293.067 | 0.08x | 5.96e-08 |
-| softmax | 64 x 131072 | float16 | triton | 18.091 | 1.35x | 5.96e-08 |
-| rmsnorm | 32 x 127 | float16 | torch | 12.663 | 1.00x | 0.000122 |
-| rmsnorm | 32 x 127 | float16 | torch_rms_norm | 9.169 | 1.38x | 0.000122 |
-| rmsnorm | 32 x 127 | float16 | triton | 1.024 | 12.37x | 0 |
-| rmsnorm | 1024 x 1024 | float16 | torch | 31.949 | 1.00x | 0.00195 |
-| rmsnorm | 1024 x 1024 | float16 | torch_rms_norm | 21.493 | 1.49x | 0.00391 |
-| rmsnorm | 1024 x 1024 | float16 | triton | 2.765 | 11.56x | 0.00195 |
-| rmsnorm | 512 x 4097 | float16 | torch | 53.856 | 1.00x | 0.00195 |
-| rmsnorm | 512 x 4097 | float16 | torch_rms_norm | 46.285 | 1.16x | 0.00391 |
-| rmsnorm | 512 x 4097 | float16 | triton | 7.475 | 7.20x | 0.00195 |
-| rmsnorm | 16384 x 4096 | float16 | torch | 7022.148 | 1.00x | 0.00391 |
-| rmsnorm | 16384 x 4096 | float16 | torch_rms_norm | 4609.933 | 1.52x | 0.00781 |
-| rmsnorm | 16384 x 4096 | float16 | triton | 749.739 | 9.37x | 0.00781 |
-| rmsnorm | 4 x 32769 | float16 | torch | 16.828 | 1.00x | 0.00391 |
-| rmsnorm | 4 x 32769 | float16 | torch_rms_norm | 35.874 | 0.47x | 0.00391 |
-| rmsnorm | 4 x 32769 | float16 | triton | 2.830 | 5.95x | 0.00195 |
-| rmsnorm | 64 x 131072 | float16 | torch | 505.098 | 1.00x | 0.00391 |
-| rmsnorm | 64 x 131072 | float16 | torch_rms_norm | 426.496 | 1.18x | 0.00391 |
-| rmsnorm | 64 x 131072 | float16 | triton | 27.812 | 18.16x | 0.00391 |
-| matmul | 127 x 255 x 65 | float16 | torch | 3.925 | 1.00x | 0.000977 |
-| matmul | 127 x 255 x 65 | float16 | triton_fixed | 2.150 | 1.83x | 0.00781 |
-| matmul | 127 x 255 x 65 | float16 | triton_tuned | 2.150 | 1.83x | 0.00781 |
-| matmul | 512 x 512 x 512 | float16 | torch | 5.393 | 1.00x | 0.0625 |
-| matmul | 512 x 512 x 512 | float16 | triton_fixed | 5.393 | 1.00x | 0.0625 |
-| matmul | 512 x 512 x 512 | float16 | triton_tuned | 4.779 | 1.13x | 0.0625 |
-| matmul | 1024 x 1024 x 1024 | float16 | torch | 26.385 | 1.00x | 0.0625 |
-| matmul | 1024 x 1024 x 1024 | float16 | triton_fixed | 28.501 | 0.93x | 0.0625 |
-| matmul | 1024 x 1024 x 1024 | float16 | triton_tuned | 26.010 | 1.01x | 0.0625 |
-| matmul | 4096 x 4096 x 4096 | float16 | torch | 1583.435 | 1.00x | 0.25 |
-| matmul | 4096 x 4096 x 4096 | float16 | triton_fixed | 2008.463 | 0.79x | 0.25 |
-| matmul | 4096 x 4096 x 4096 | float16 | triton_tuned | 1461.794 | 1.08x | 0.25 |
+| add | 257 | float16 | torch | 1.126 | 1.00x | 0 |
+| add | 257 | float16 | triton_256 | 0.990 | 1.14x | 0 |
+| add | 257 | float16 | triton_1024 | 1.024 | 1.10x | 0 |
+| add | 1048576 | float16 | torch | 2.410 | 1.00x | 0 |
+| add | 1048576 | float16 | triton_256 | 2.901 | 0.83x | 0 |
+| add | 1048576 | float16 | triton_1024 | 2.389 | 1.01x | 0 |
+| add | 16777216 | float16 | torch | 153.737 | 1.00x | 0 |
+| add | 16777216 | float16 | triton_256 | 157.934 | 0.97x | 0 |
+| add | 16777216 | float16 | triton_1024 | 154.863 | 0.99x | 0 |
+| row_sum | 32 x 127 | float16 | torch | 1.707 | 1.00x | 0 |
+| row_sum | 32 x 127 | float16 | triton | 1.092 | 1.56x | 0 |
+| row_sum | 1024 x 1024 | float16 | torch | 2.285 | 1.00x | 7.63e-06 |
+| row_sum | 1024 x 1024 | float16 | triton | 1.741 | 1.31x | 7.63e-06 |
+| row_sum | 512 x 4097 | float16 | torch | 4.028 | 1.00x | 1.53e-05 |
+| row_sum | 512 x 4097 | float16 | triton | 2.458 | 1.64x | 1.53e-05 |
+| row_sum | 16384 x 4096 | float16 | torch | 195.277 | 1.00x | 1.53e-05 |
+| row_sum | 16384 x 4096 | float16 | triton | 203.264 | 0.96x | 1.53e-05 |
+| row_sum | 4 x 32769 | float16 | torch | 2.901 | 1.00x | 1.53e-05 |
+| row_sum | 4 x 32769 | float16 | triton | 2.662 | 1.09x | 1.53e-05 |
+| row_sum | 64 x 131072 | float16 | torch | 18.159 | 1.00x | 9.16e-05 |
+| row_sum | 64 x 131072 | float16 | triton | 5.973 | 3.04x | 0.000122 |
+| softmax | 32 x 127 | float16 | torch | 1.638 | 1.00x | 0 |
+| softmax | 32 x 127 | float16 | torch_decomposed | 9.353 | 0.18x | 0 |
+| softmax | 32 x 127 | float16 | triton_4w | 1.259 | 1.30x | 9.54e-07 |
+| softmax | 32 x 127 | float16 | triton_8w | 1.263 | 1.30x | 9.54e-07 |
+| softmax | 1024 x 1024 | float16 | torch | 4.368 | 1.00x | 3.81e-06 |
+| softmax | 1024 x 1024 | float16 | torch_decomposed | 23.506 | 0.19x | 3.81e-06 |
+| softmax | 1024 x 1024 | float16 | triton_4w | 2.558 | 1.71x | 3.81e-06 |
+| softmax | 1024 x 1024 | float16 | triton_8w | 3.447 | 1.27x | 3.81e-06 |
+| softmax | 512 x 4097 | float16 | torch | 12.902 | 1.00x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | torch_decomposed | 41.711 | 0.31x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | triton_4w | 5.154 | 2.50x | 9.54e-07 |
+| softmax | 512 x 4097 | float16 | triton_8w | 5.790 | 2.23x | 1.91e-06 |
+| softmax | 16384 x 4096 | float16 | torch | 459.196 | 1.00x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | torch_decomposed | 4842.428 | 0.09x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | triton_4w | 456.487 | 1.01x | 3.81e-06 |
+| softmax | 16384 x 4096 | float16 | triton_8w | 450.354 | 1.02x | 3.81e-06 |
+| softmax | 4 x 32769 | float16 | torch | 8.011 | 1.00x | 5.96e-08 |
+| softmax | 4 x 32769 | float16 | torch_decomposed | 14.711 | 0.54x | 0 |
+| softmax | 4 x 32769 | float16 | triton | 2.799 | 2.86x | 0 |
+| softmax | 64 x 131072 | float16 | torch | 24.883 | 1.00x | 1.19e-07 |
+| softmax | 64 x 131072 | float16 | torch_decomposed | 264.909 | 0.09x | 5.96e-08 |
+| softmax | 64 x 131072 | float16 | triton | 17.476 | 1.42x | 5.96e-08 |
+| rmsnorm | 32 x 127 | float16 | torch | 12.834 | 1.00x | 0.000122 |
+| rmsnorm | 32 x 127 | float16 | torch_rms_norm | 9.284 | 1.38x | 0.000122 |
+| rmsnorm | 32 x 127 | float16 | triton | 1.161 | 11.06x | 0 |
+| rmsnorm | 1024 x 1024 | float16 | torch | 32.051 | 1.00x | 0.00195 |
+| rmsnorm | 1024 x 1024 | float16 | torch_rms_norm | 21.801 | 1.47x | 0.00391 |
+| rmsnorm | 1024 x 1024 | float16 | triton | 2.901 | 11.05x | 0.00195 |
+| rmsnorm | 512 x 4097 | float16 | torch | 53.726 | 1.00x | 0.00195 |
+| rmsnorm | 512 x 4097 | float16 | torch_rms_norm | 46.490 | 1.16x | 0.00391 |
+| rmsnorm | 512 x 4097 | float16 | triton | 7.812 | 6.88x | 0.00195 |
+| rmsnorm | 16384 x 4096 | float16 | torch | 6376.687 | 1.00x | 0.00391 |
+| rmsnorm | 16384 x 4096 | float16 | torch_rms_norm | 4203.896 | 1.52x | 0.00781 |
+| rmsnorm | 16384 x 4096 | float16 | triton | 675.499 | 9.44x | 0.00781 |
+| rmsnorm | 4 x 32769 | float16 | torch | 16.998 | 1.00x | 0.00391 |
+| rmsnorm | 4 x 32769 | float16 | torch_rms_norm | 36.079 | 0.47x | 0.00391 |
+| rmsnorm | 4 x 32769 | float16 | triton | 2.998 | 5.67x | 0.00195 |
+| rmsnorm | 64 x 131072 | float16 | torch | 443.358 | 1.00x | 0.00391 |
+| rmsnorm | 64 x 131072 | float16 | torch_rms_norm | 391.635 | 1.13x | 0.00391 |
+| rmsnorm | 64 x 131072 | float16 | triton | 29.628 | 14.96x | 0.00391 |
+| matmul | 127 x 255 x 65 | float16 | torch | 4.062 | 1.00x | 0.000977 |
+| matmul | 127 x 255 x 65 | float16 | triton_fixed | 2.287 | 1.78x | 0.00781 |
+| matmul | 127 x 255 x 65 | float16 | triton_tuned | 2.309 | 1.76x | 0.00781 |
+| matmul | 512 x 512 x 512 | float16 | torch | 5.526 | 1.00x | 0.0625 |
+| matmul | 512 x 512 x 512 | float16 | triton_fixed | 5.557 | 0.99x | 0.0625 |
+| matmul | 512 x 512 x 512 | float16 | triton_tuned | 4.915 | 1.12x | 0.0625 |
+| matmul | 1024 x 1024 x 1024 | float16 | torch | 26.624 | 1.00x | 0.0625 |
+| matmul | 1024 x 1024 x 1024 | float16 | triton_fixed | 28.672 | 0.93x | 0.0625 |
+| matmul | 1024 x 1024 x 1024 | float16 | triton_tuned | 26.247 | 1.01x | 0.0625 |
+| matmul | 4096 x 4096 x 4096 | float16 | torch | 1445.274 | 1.00x | 0.25 |
+| matmul | 4096 x 4096 x 4096 | float16 | triton_fixed | 1821.969 | 0.79x | 0.25 |
+| matmul | 4096 x 4096 x 4096 | float16 | triton_tuned | 1337.105 | 1.08x | 0.25 |
 

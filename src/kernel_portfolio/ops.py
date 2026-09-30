@@ -4,9 +4,10 @@ Each operator is split into a `_*_out` helper (validation and output allocation)
 a launch. kernel_portfolio.library reuses the helpers for its torch.compile-friendly
 custom ops, so both entry points enforce the same contracts.
 
-softmax and residual_rmsnorm support autograd: when an input tracks gradients they
-run through the custom ops, which record Triton backward kernels. add, row_sum and
-matmul are forward-only and reject gradient-tracking inputs.
+Every operator supports autograd: when an input tracks gradients, the call runs through
+the custom ops, which record the backward pass (Triton kernels for softmax, RMSNorm and
+matmul; the identity for add; a broadcast view for row_sum). The backward functions are
+public too. Double backward is not supported: the backward kernels are not differentiable.
 """
 
 import contextlib
@@ -60,7 +61,12 @@ def _add_out(x: torch.Tensor, y: torch.Tensor, block_size: int) -> torch.Tensor:
 
 
 def add(x: torch.Tensor, y: torch.Tensor, *, block_size: int = 256) -> torch.Tensor:
-    """Add contiguous vectors of the same dtype; block_size is an experimental knob."""
+    """Add contiguous vectors of the same dtype; block_size is an experimental knob.
+
+    Supports autograd: both inputs receive the upstream gradient unchanged.
+    """
+    if _tracks_grad(x, y):
+        return _custom_ops().add(x, y, block_size)
     out = _add_out(x, y, block_size)
     if x.numel():
         with _on(x.device):
@@ -75,7 +81,12 @@ def _row_sum_out(x: torch.Tensor) -> torch.Tensor:
 
 
 def row_sum(x: torch.Tensor) -> torch.Tensor:
-    """Reduce each row into FP32. Width 1..2**20 (looped above 8192); row gaps are supported."""
+    """Reduce each row into FP32. Width 1..2**20 (looped above 8192); row gaps are supported.
+
+    Supports autograd: the gradient is each row's gradient repeated along the row.
+    """
+    if _tracks_grad(x):
+        return _custom_ops().row_sum(x)
     out = _row_sum_out(x)
     if x.shape[0]:
         with _on(x.device):
@@ -212,9 +223,69 @@ def _matmul_out(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 
 def matmul(a: torch.Tensor, b: torch.Tensor, *, autotune: bool = True) -> torch.Tensor:
-    """Contiguous FP16/BF16 GEMM with FP32 accumulation, returned in input dtype."""
+    """Contiguous FP16/BF16 GEMM with FP32 accumulation, returned in input dtype.
+
+    Supports autograd for both operands. Only the gradients that are needed are computed.
+    """
+    if _tracks_grad(a, b):
+        return _custom_ops().matmul(a, b, autotune)
     out = _matmul_out(a, b)
     if out.numel() and a.shape[1]:
         with _on(a.device):
             _backend().launch_matmul(a, b, out, autotune)
     return out
+
+
+def _matmul_grad_check(grad: torch.Tensor, operand: torch.Tensor, name: str, axis: int) -> None:
+    c.tensor(grad, "grad", ndim=2)
+    c.tensor(operand, name, ndim=2)
+    c.same(grad, operand, shape=False)
+    c.contiguous(operand)
+    if grad.dtype == torch.float32:
+        raise TypeError("matmul accepts float16 and bfloat16 only")
+    if grad.shape[axis] != operand.shape[axis]:
+        raise ValueError(f"grad and {name} must have the same size along dimension {axis}")
+
+
+def _matmul_grad_a_out(grad: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Output for dA = grad @ b.T (M x K); the reduction runs over N."""
+    _matmul_grad_check(grad, b, "b", 1)
+    m, n = grad.shape
+    k = b.shape[0]
+    c.matmul_shape(m, k)
+    return (torch.zeros if n == 0 else torch.empty)((m, k), dtype=grad.dtype, device=grad.device)
+
+
+def _matmul_grad_b_out(grad: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+    """Output for dB = a.T @ grad (K x N); the reduction runs over the M tokens."""
+    _matmul_grad_check(grad, a, "a", 0)
+    m, k = a.shape
+    n = grad.shape[1]
+    c.matmul_shape(k, n)
+    return (torch.zeros if m == 0 else torch.empty)((k, n), dtype=grad.dtype, device=grad.device)
+
+
+def _matmul_backward_out(
+    grad: torch.Tensor, a: torch.Tensor, b: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    da, db = _matmul_grad_a_out(grad, b), _matmul_grad_b_out(grad, a)
+    if a.shape[1] != b.shape[0]:  # each output was checked against grad, not against the other
+        raise ValueError("Inner dimensions must match")
+    return da, db
+
+
+def matmul_backward(
+    grad: torch.Tensor, a: torch.Tensor, b: torch.Tensor, *, autotune: bool = True
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """(dA, dB) of matmul(a, b) for upstream grad (M x N, any strides).
+
+    dA = grad @ b.T and dB = a.T @ grad, each with FP32 accumulation and one rounding to
+    the input dtype. The transposed operands are read through strides, never copied.
+    """
+    da, db = _matmul_backward_out(grad, a, b)
+    with _on(grad.device):
+        if da.numel() and grad.shape[1]:
+            _backend().launch_matmul_grad_a(grad, b, da, autotune)
+        if db.numel() and a.shape[0]:
+            _backend().launch_matmul_grad_b(grad, a, db, autotune)
+    return da, db

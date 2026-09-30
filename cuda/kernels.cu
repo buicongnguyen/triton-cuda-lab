@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -295,6 +296,27 @@ void test_softmax(int rows, int width, bool extreme) {
 
 constexpr int kSamples = 15, kLaunchesPerSample = 50;
 
+// After the GPU has idled for several seconds it starts at reduced clocks, and a short
+// kernel timed in the first few hundred milliseconds can run several times slower than at
+// boost clocks. A compute-bound kernel that fills every SM for about 200 ms wakes the GPU,
+// and the boost outlasts the short timed section that follows (see
+// scripts/gpu_clock_probe.py).
+__global__ void burn(float* sink, int iterations) {
+    float x = threadIdx.x * 1e-3f;
+    for (int i = 0; i < iterations; ++i) x = fmaf(x, 1.0000001f, 1e-7f);
+    if (x == 123.456f) sink[0] = x;  // never true: keeps the loop from being optimized away
+}
+
+void warm_up_gpu(int sm_count, double seconds) {
+    Buffer sink(1);
+    const auto start = std::chrono::steady_clock::now();
+    while (std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() < seconds) {
+        for (int i = 0; i < 20; ++i) burn<<<sm_count * 4, 256>>>(sink.ptr, 1 << 17);
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
+    CUDA_CHECK(cudaGetLastError());
+}
+
 // Times all kernels together: each round takes one sample of every kernel, starting at
 // a different kernel each time. On a GPU shared with desktop applications, a burst of
 // other work then costs one sample of several kernels, which the median discards,
@@ -348,6 +370,7 @@ int main(int argc, char** argv) {
         Buffer x(count), y(count), out(count);
         upload(x, values);
         upload(y, values);
+        warm_up_gpu(props.multiProcessorCount, 0.25);
         const auto times = benchmark({
             [&] { vector_add<<<(count + 255) / 256, 256>>>(x.ptr, y.ptr, out.ptr, count); },
             [&] { softmax_serial<<<(rows + 255) / 256, 256>>>(x.ptr, out.ptr, rows, width); },
@@ -363,7 +386,7 @@ int main(int argc, char** argv) {
         std::ostream& stream = file_output ? file : std::cout;
         stream << std::setprecision(9) << "{\n  \"gpu\": \"" << props.name
                << "\",\n  \"driver\": " << driver << ",\n  \"runtime\": " << runtime
-               << ",\n  \"dtype\": \"float32\",\n  \"timing\": \"CUDA events; 50 launches/sample; 15 samples, kernels interleaved\","
+               << ",\n  \"dtype\": \"float32\",\n  \"timing\": \"CUDA events; 50 launches/sample; 15 samples, kernels interleaved; 250 ms compute warm-up first\","
                << "\n  \"softmax_shape\": [1024, 1024],\n  \"add_elements\": 1048576,"
                << "\n  \"correctness\": \"passed CPU double softmax reference and exact float addition\","
                << "\n  \"variants\": {";

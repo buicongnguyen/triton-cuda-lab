@@ -1,0 +1,23 @@
+Triton / PyTorch speedup, FP16, warm L2, 3 training steps on NVIDIA GeForce RTX 4080 SUPER.
+Other GPU load before each run (percent): 57, 11, 10
+
+case                                      run 1    run 2    run 3   spread
+softmax_train 32 x 127 triton             1.66x    1.44x    0.90x      84%
+softmax_train 1024 x 1024 triton          2.02x    1.98x    1.94x       4%
+softmax_train 512 x 4097 triton           2.07x    2.08x    2.11x       2%
+softmax_train 16384 x 4096 triton         1.60x    1.62x    1.61x       1%
+softmax_train 4 x 32769 triton            2.85x    2.89x    2.79x       4%
+softmax_train 64 x 131072 triton          2.44x    1.57x    2.19x      56%
+rmsnorm_train 32 x 127 triton             8.97x    7.82x    7.85x      15%
+rmsnorm_train 1024 x 1024 triton          6.62x    6.36x    6.07x       9%
+rmsnorm_train 512 x 4097 triton           6.92x    7.23x    7.42x       7%
+rmsnorm_train 16384 x 4096 triton         8.82x    8.88x    8.84x       1%
+rmsnorm_train 4 x 32769 triton            4.15x    3.82x    4.27x      12%
+rmsnorm_train 64 x 131072 triton         10.89x   11.87x   12.00x      10%
+matmul_train 127 x 255 x 65 triton        0.99x    1.00x    1.00x       1%
+matmul_train 512 x 512 x 512 triton       1.08x    1.09x    1.09x       1%
+matmul_train 1024 x 1024 x 1024 triton    0.97x    0.93x    0.99x       7%
+matmul_train 4096 x 4096 x 4096 triton    1.01x    1.07x    1.03x       6%
+matmul_train 16384 x 1024 x 1024 triton    0.97x    0.98x    0.96x       1%
+
+12 of 17 comparisons agree within 10%; the widest spread is 84%.

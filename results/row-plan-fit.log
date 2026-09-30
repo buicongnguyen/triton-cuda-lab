@@ -1,0 +1,19 @@
+Mean regret per operator over 332 cells per log; 80 SMs; lower is better.
+Regret is a plan's time over the best plan's time in the same cell, minus 1.
+Each fit tries 576 threshold combinations on one log and scores the winner
+on the other log. 'gain' is the current rule's regret minus the fitted rule's, in
+percentage points, on the log the fit did not see.
+
+softmax
+  current rule: 5.4% on the first log, 4.9% on the second
+  fitted on the first log: split below 160 rows from width 12289; 4096-wide chunks up to width 32000 from 0 rows
+    4.4% on the log it was fitted on, 4.9% on the other: gain -0.0 points
+  fitted on the second log: split below 100 rows from width 8193; 4096-wide chunks up to width 28672 from 0 rows
+    4.9% on the log it was fitted on, 5.5% on the other: gain -0.2 points
+
+rmsnorm
+  current rule: 5.5% on the first log, 5.5% on the second
+  fitted on the first log: split below 40 rows from width 8193; 4096-wide chunks up to width 16384 from 80 rows
+    5.1% on the log it was fitted on, 5.2% on the other: gain +0.3 points
+  fitted on the second log: split below 40 rows from width 8193; 4096-wide chunks up to width 16384 from 80 rows
+    5.2% on the log it was fitted on, 5.1% on the other: gain +0.3 points

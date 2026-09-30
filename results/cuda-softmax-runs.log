@@ -1,5 +1,10 @@
-Three runs of build\cuda_portfolio.exe --json, kernels interleaved, 15 samples of 50 launches; median us
-run  vector_add  serial  parallel  online(float4)  online_scalar  parallel/online  parallel/scalar
-1        8.335  468.521     9.888           8.806          9.066             1.12x             1.09x
-2        8.091  472.371    10.977           9.825          9.978             1.12x             1.10x
-3        8.868  477.348     9.814           9.827          9.747             1.00x             1.01x
+7 runs of cuda_portfolio.exe --json, kernels interleaved, 15 samples of 50 launches after a 250 ms compute warm-up; median us
+run   load vector_add   serial  parallel  online(float4)  online_scalar  parallel/online  parallel/scalar
+1       5%      8.266  419.203    12.718           9.667         10.009            1.32x            1.27x
+2       8%      9.473  419.004    11.633          10.851         10.686            1.07x            1.09x
+3       2%      8.663  418.488    20.109          16.609         12.227            1.21x            1.64x
+4       9%      8.643  418.550    12.361          11.162          9.165            1.11x            1.35x
+5       3%      7.987  419.183    10.301           9.602          9.236            1.07x            1.12x
+6       3%      9.462  430.694    13.347          12.304         10.998            1.08x            1.21x
+7       6%      7.885  418.755     8.663           8.786          8.988            0.99x            0.96x
+Saved the run with the middle parallel-softmax median (12.361 us).

@@ -14,9 +14,8 @@ you do not recognize are in the [glossary](../learning/GLOSSARY.md).
 | Choose it when | You want one terminal for everything | You want the upstream, Linux-only toolchain |
 
 Upstream Triton publishes Linux packages only; `triton-windows` is maintained
-outside the Triton project and follows its releases. On this machine it measured
-close to WSL, e.g. FP16 softmax 16384x4096: 441 us in PowerShell vs 425 us in WSL.
-Compare timings only within one environment.
+outside the Triton project and follows its releases. Compare timings only within
+one environment: every recorded result comes from WSL.
 
 ## Get the code
 
@@ -195,6 +194,7 @@ Native Windows, from PowerShell at the repo root. The script needs Visual Studio
 .\build\cuda_portfolio.exe --test-only
 New-Item -ItemType Directory -Force results\local | Out-Null
 .\build\cuda_portfolio.exe --json results\local\cuda.json
+python scripts\cuda_runs.py --json-out results\local\cuda-runs.json   # three runs, medians side by side
 ```
 
 `--test-only` should print `CUDA correctness passed (3 vector + 18 softmax cases)`.
@@ -243,7 +243,7 @@ In the GPU environment:
 
 ```python
 import torch
-from kernel_portfolio import add, matmul, residual_rmsnorm, row_sum, softmax
+from kernel_portfolio import add, matmul, matmul_backward, residual_rmsnorm, row_sum, softmax
 
 x = torch.randn(1024, 1024, device="cuda", dtype=torch.float16)
 y = softmax(x)                                   # same shape and dtype as x
@@ -253,28 +253,35 @@ c = matmul(x, x)                                 # FP16/BF16 only
 with torch.no_grad():                            # model parameters are fine here
     z = residual_rmsnorm(x, x, torch.nn.Parameter(w))
 
-# softmax and residual_rmsnorm train: autograd runs their Triton backward kernels.
+# Every operator trains: autograd runs the Triton backward kernels.
 weight = torch.nn.Parameter(torch.ones(1024, device="cuda", dtype=torch.float16))
 h = x.detach().requires_grad_()
 softmax(residual_rmsnorm(h, h, weight)).float().square().sum().backward()
 print(h.grad.shape, weight.grad.shape)           # both gradients are filled
+
+# matmul trains both operands; only the gradients that are needed are computed.
+a = x.detach().requires_grad_()
+matmul(a, x).float().square().sum().backward()   # x is a constant here, so only a.grad
 ```
 
+`examples/train_tiny.py` trains a small model that uses all five operators next to a
+plain-PyTorch twin from the same weights and batches (`--compile` compiles the whole
+training step).
+
 The backward kernels are also callable directly, for example to measure them:
-`softmax_backward(grad, y)` takes the saved softmax output, and
+`softmax_backward(grad, y)` takes the saved softmax output;
 `residual_rmsnorm_backward(grad, x, residual, weight)` returns the input gradient
-(shared by `x` and `residual`) and the weight gradient.
+(shared by `x` and `residual`) and the weight gradient; and
+`matmul_backward(grad, a, b)` returns `(grad @ b.T, a.T @ grad)`.
 
 Unsupported inputs raise `ValueError` or `TypeError` before anything launches;
 the message names the violated rule.
 
 Inside a compiled model, use the custom-op versions. They run the same kernels
 with the same shape, dtype and device checks, and `torch.compile` can capture them
-in one graph. The softmax and residual RMSNorm custom ops register their backward
-kernels with autograd, so a compiled training step traces both directions. The
-`add`, `row_sum` and `matmul` custom ops have no autograd formula: they accept
-gradient-tracking inputs but raise on backward. For inference, use
-`torch.no_grad()` or `torch.inference_mode()`:
+in one graph. Every custom op registers its backward with autograd, so a compiled
+training step traces both directions. For inference, use `torch.no_grad()` or
+`torch.inference_mode()`:
 
 ```python
 import kernel_portfolio.library  # registers torch.ops.kernel_portfolio.*
@@ -295,20 +302,20 @@ Use the plain `kernel_portfolio.*` functions for eager calls: going through
 
 | Operator | Inputs | Output / limitations |
 | --- | --- | --- |
-| `add` | Equal contiguous vectors, FP32/FP16/BF16 | Same shape/dtype; empty vector allowed |
-| `row_sum` | 2D, width 1–1,048,576, contiguous columns (any stride for width 1), nonoverlapping rows | One FP32 value per row; rows wider than 8192 loop over chunks |
+| `add` | Equal contiguous vectors, FP32/FP16/BF16 | Same shape/dtype; empty vector allowed. Records gradients (each input receives the upstream gradient) |
+| `row_sum` | 2D, width 1–1,048,576, contiguous columns (any stride for width 1), nonoverlapping rows | One FP32 value per row; rows wider than 8192 loop over chunks. Records gradients (the row's gradient repeated along the row) |
 | `softmax` | Same row layout; finite values, or `-inf` for masked entries | Same shape/dtype, stable along last dimension; masked entries get 0, and a row with no finite value gives NaN as in PyTorch. Records gradients |
 | `softmax_backward` | Upstream gradient of any strides; the contiguous softmax output | Input gradient `y * (grad - sum(y * grad))`, same dtype |
-| `residual_rmsnorm` | Same-shape row tensors and contiguous weight vector of matching dtype/device | FP32 residual addition/reduction, one rounding at output, positive finite epsilon. Records gradients for all three tensors |
-| `residual_rmsnorm_backward` | Upstream gradient of any strides; the forward's inputs and `eps` | Input gradient (for both `x` and `residual`) and weight gradient; the weight gradient is summed over rows in FP32 in a fixed order, so it is deterministic |
-| `matmul` | Contiguous 2D FP16/BF16, matching inner dimensions | Same dtype, FP32 accumulation; zero dimensions supported |
+| `residual_rmsnorm` | Same-shape row tensors and contiguous weight vector of matching dtype/device | FP32 residual addition/reduction, one rounding at output, positive finite epsilon. Records gradients for all three tensors; the weight gradient (two small launches) is computed even if the weight is frozen |
+| `residual_rmsnorm_backward` | Upstream gradient of any strides; the forward's inputs and `eps` | Input gradient (for both `x` and `residual`) and weight gradient; the weight gradient is summed over rows in FP32 in a fixed order (the grouping follows the GPU's SM count), so repeated calls on one GPU give identical results |
+| `matmul` | Contiguous 2D FP16/BF16, matching inner dimensions | Same dtype, FP32 accumulation; zero dimensions supported. Records gradients for both operands, computing only the ones that are needed |
+| `matmul_backward` | Upstream gradient `M x N` of any strides; the forward's contiguous `a` (`M x K`) and `b` (`K x N`) | `(grad @ b.T, a.T @ grad)`: two GEMMs that read the transposed operands through strides, each with FP32 accumulation and one rounding; no atomics or split-K, so a given configuration gives identical results on every call |
 
 All calls require NVIDIA CUDA, reject mixed dtypes/devices, and allocate fresh
-outputs. `add`, `row_sum` and `matmul` reject `requires_grad` inputs while autograd
-is enabled (their custom ops accept them but raise on backward); `softmax` and
-`residual_rmsnorm` record gradients instead, and double backward is not supported.
-Both interfaces accept model parameters under `torch.no_grad()` or
-`torch.inference_mode()`. Rows wider than 8192 loop over chunks in one program per
+outputs. Every operator records gradients for inputs that track them while autograd
+is enabled; double backward is not supported (the backward kernels are not
+differentiable, and asking for it raises). Both interfaces accept model parameters under
+`torch.no_grad()` or `torch.inference_mode()`. Rows wider than 8192 loop over chunks in one program per
 row, except that softmax and RMSNorm (above 16384) split each row across programs
 when there are fewer rows than SMs.
 Row width and GEMM N/K are compile-time constants: the first call with a new width
@@ -316,7 +323,9 @@ or weight shape compiles, typically once per model. Vector lengths, row counts,
 row strides, GEMM M and `eps` are runtime arguments, so a new batch size reuses the
 compiled kernel. GEMM autotuning runs once per power-of-two bucket of M and times
 real launches, so call `matmul` once for a new bucket before capturing it in a
-CUDA graph.
+CUDA graph. The two backward GEMMs tune on their own buckets (the token count, and for
+`grad @ b.T` the reduction length too), so run one training step at each batch size
+before capturing a training step.
 
 No implicit input copies, broadcasting, double backward, NaN/Inf policy, or production
 dispatcher is provided. Inputs must be finite, except that softmax accepts `-inf`

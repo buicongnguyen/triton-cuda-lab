@@ -17,7 +17,7 @@ import torch
 import triton
 
 from kernel_portfolio import triton_kernels as current
-from kernel_portfolio.benchmark import prepare_timer, sample_ms
+from kernel_portfolio.benchmark import ensure_warm, prepare_timer, sample_ms
 
 ARCHIVE = Path(__file__).resolve().parents[1] / "results" / "archive"
 ROW_SHAPES = ((1024, 1024), (512, 3072), (512, 4097), (512, 4104), (512, 4112), (512, 5120))
@@ -34,6 +34,7 @@ def load(path, name):
 def time_us(fn):
     fn()
     run, count = prepare_timer(fn, "graph", 30)
+    ensure_warm()  # small kernels are only measured at boost clocks
     return statistics.median(sample_ms(run, count) for _ in range(9)) * 1e3
 
 

@@ -1,0 +1,15 @@
+Worst error / tolerance over 300 random inputs per row (fails above 1)
+
+softmax backward
+  float32   dx  0.01
+  float16   dx  0.24
+  bfloat16  dx  0.39
+
+residual RMSNorm backward
+  float32   dx  0.07  dresidual  0.07  dweight  0.26
+  float16   dx  0.35  dresidual  0.35  dweight  0.31
+  bfloat16  dx  0.25  dresidual  0.25  dweight  0.24
+
+matmul backward
+  float16   dA  0.28  dB  0.30
+  bfloat16  dA  0.33  dB  0.35

@@ -15,7 +15,7 @@ import torch
 
 from kernel_portfolio import ops
 from kernel_portfolio import triton_kernels as k
-from kernel_portfolio.benchmark import prepare_timer, sample_ms
+from kernel_portfolio.benchmark import ensure_warm, prepare_timer, sample_ms
 
 CHOICES = (
     ("looped", 2048, 4),
@@ -36,6 +36,7 @@ def capture(fn):
 
 
 def interleaved_us(timers, rng):
+    ensure_warm()  # small kernels are only measured at boost clocks
     samples = {name: [] for name in timers}
     for _ in range(ROUNDS):
         names = list(timers)
@@ -55,7 +56,8 @@ def main():
     sms = k._sm_count(torch.cuda.current_device())
     print(
         f"{sms} SMs; automatic plan: split softmax (and RMSNorm wider than 16384) when "
-        f"rows < {sms}; otherwise loop, 2048/4w when rows >= {2 * sms}, else 8192/16w"
+        f"rows < {sms}; otherwise loop, in 4096/8w chunks when rows >= {sms} and the row is at "
+        f"most {k.NARROW_ROW_WIDTH} wide, else 8192/16w"
     )
     header = "".join(f"{f'{p} {c}/{w}w':>16}" for p, c, w in CHOICES)
     print(f"{'shape':12} {'op':8} {'torch':>10}{header}{'auto':>12}")

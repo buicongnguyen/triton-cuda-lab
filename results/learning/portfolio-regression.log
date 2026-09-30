@@ -14,29 +14,39 @@ test_quoted_timings_exist_in_results (test_docs.DocNumberTests.test_quoted_timin
 test_archived_results_match_archived_kernels (test_docs.ResultProvenanceTests.test_archived_results_match_archived_kernels) ... ok
 test_course_manifest_matches_course_files (test_docs.ResultProvenanceTests.test_course_manifest_matches_course_files) ... ok
 test_results_were_measured_on_current_sources (test_docs.ResultProvenanceTests.test_results_were_measured_on_current_sources) ... ok
-test_benchmark_cli_modes (test_gpu.BenchmarkSmokeTests.test_benchmark_cli_modes) ... note: the GPU was 23% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
-note: the GPU was 10% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
-note: the GPU was 10% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
-note: the GPU was 20% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
-note: the GPU was 26% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+test_benchmark_cli_modes (test_gpu.BenchmarkSmokeTests.test_benchmark_cli_modes) ... note: the GPU was 33% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 36% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 21% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+note: the GPU was 21% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
 <venv>/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
   warnings.warn(
 ok
 test_benchmark_interleaves_a_whole_suite (test_gpu.BenchmarkSmokeTests.test_benchmark_interleaves_a_whole_suite)
-All cases are prepared, then sampled together: every case's inputs must stay ... note: the GPU was 10% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
+All cases are prepared, then sampled together: every case's inputs must stay ... note: the GPU was 12% busy before this run; other programs can shift results between runs (docs/BENCHMARKING.md)
 ok
+test_report_counts_only_its_own_warm_up_bursts (test_gpu.BenchmarkSmokeTests.test_report_counts_only_its_own_warm_up_bursts) ... ok
 test_training_benchmark (test_gpu.BenchmarkSmokeTests.test_training_benchmark)
 Forward+backward suites run through autograd in both timing modes. ... ok
+test_warm_up_runs_inside_and_outside_inference_mode (test_gpu.BenchmarkSmokeTests.test_warm_up_runs_inside_and_outside_inference_mode)
+The burst's operands are cached; allocating them in inference mode must not break ... ok
 test_workshop_benchmark_cold_cache (test_gpu.BenchmarkSmokeTests.test_workshop_benchmark_cold_cache) ... ok
 test_add_checker_rejects_unmasked_store (test_gpu.CheckerMutationTests.test_add_checker_rejects_unmasked_store) ... ok
 test_gemm_checker_rejects_early_rounding (test_gpu.CheckerMutationTests.test_gemm_checker_rejects_early_rounding) ... ok
+test_compiled_full_training_step_matches_eager (test_gpu.CompileTests.test_compiled_full_training_step_matches_eager)
+One step through every operator: norm, softmax, GEMM, reduction and add. ... ok
 test_compiled_graph_matches_eager (test_gpu.CompileTests.test_compiled_graph_matches_eager) ... ok
 test_compiled_training_step_matches_eager (test_gpu.CompileTests.test_compiled_training_step_matches_eager) ... ok
 test_custom_op_registration (test_gpu.CompileTests.test_custom_op_registration) ... ok
+test_custom_ops_train_and_infer (test_gpu.CompileTests.test_custom_ops_train_and_infer) ... ok
 test_dynamic_row_count (test_gpu.CompileTests.test_dynamic_row_count) ... ok
-test_other_custom_ops_are_forward_only (test_gpu.CompileTests.test_other_custom_ops_are_forward_only) ... ok
 test_add (test_gpu.GpuTests.test_add) ... ok
+test_add_and_row_sum_gradients (test_gpu.GpuTests.test_add_and_row_sum_gradients)
+add passes the gradient through; row_sum broadcasts it (both exact). ... ok
+test_backward_reuses_tuning_across_batch_sizes (test_gpu.GpuTests.test_backward_reuses_tuning_across_batch_sizes)
+Token counts in one power-of-two bucket share tuning; a new bucket adds one. ... ok
 test_device_guard (test_gpu.GpuTests.test_device_guard) ... skipped 'Needs two NVIDIA GPUs'
+test_double_backward_is_rejected (test_gpu.GpuTests.test_double_backward_is_rejected) ... ok
+test_every_backward_gemm_config (test_gpu.GpuTests.test_every_backward_gemm_config) ... ok
 test_every_gemm_config (test_gpu.GpuTests.test_every_gemm_config) ... ok
 test_extreme_softmax (test_gpu.GpuTests.test_extreme_softmax) ... ok
 test_extreme_softmax_wide_rows (test_gpu.GpuTests.test_extreme_softmax_wide_rows) ... ok
@@ -44,18 +54,34 @@ test_gemm (test_gpu.GpuTests.test_gemm) ... ok
 test_invalid_gpu_inputs (test_gpu.GpuTests.test_invalid_gpu_inputs) ... ok
 test_masked_softmax (test_gpu.GpuTests.test_masked_softmax)
 -inf scores (attention masks, padding) give probability 0 at every width. ... ok
+test_matmul_backward (test_gpu.GpuTests.test_matmul_backward)
+dA and dB match FP64 autograd: ragged, empty, and non-dense upstream gradients. ... ok
+test_matmul_backward_frozen_operands_and_direct_call (test_gpu.GpuTests.test_matmul_backward_frozen_operands_and_direct_call) ... ok
+test_matmul_saves_only_the_operands_its_gradients_read (test_gpu.GpuTests.test_matmul_saves_only_the_operands_its_gradients_read) ... ok
 test_nondefault_stream (test_gpu.GpuTests.test_nondefault_stream) ... ok
 test_parameters_train_and_infer (test_gpu.GpuTests.test_parameters_train_and_infer)
 A weight Parameter trains under autograd and is accepted under no_grad. ... ok
 test_rmsnorm (test_gpu.GpuTests.test_rmsnorm) ... ok
 test_rmsnorm_backward (test_gpu.GpuTests.test_rmsnorm_backward)
 dx, dresidual and dweight match FP64 autograd; dweight is deterministic. ... ok
+test_rmsnorm_backward_with_correlated_gradient (test_gpu.GpuTests.test_rmsnorm_backward_with_correlated_gradient)
+The row term z * sum(dy * w * z) is O(1) only if dy follows z and w has a mean. ... ok
 test_row_ops (test_gpu.GpuTests.test_row_ops) ... ok
+test_shared_gradients_do_not_alias (test_gpu.GpuTests.test_shared_gradients_do_not_alias)
+add and RMSNorm hand one tensor to two inputs; each leaf must own its gradient. ... ok
 test_softmax_backward (test_gpu.GpuTests.test_softmax_backward)
 Autograd through ops.softmax matches FP64 autograd for every row plan. ... ok
 test_varying_sizes_reuse_compiled_kernels (test_gpu.GpuTests.test_varying_sizes_reuse_compiled_kernels)
 Per-request sizes (length, rows, stride, GEMM M) must not recompile or retune. ... ok
+test_tiny_model_trains_compiled (test_gpu.TrainingExampleTests.test_tiny_model_trains_compiled) ... ok
+test_tiny_model_trains_like_pytorch (test_gpu.TrainingExampleTests.test_tiny_model_trains_like_pytorch) ... ok
 setUpClass (test_interpreter.InterpreterTests) ... skipped 'Set TRITON_INTERPRET=1 with Triton installed'
+test_cpu_interpreter_plans_reach_both_paths (test_interpreter.RowPlanTests.test_cpu_interpreter_plans_reach_both_paths) ... ok
+test_every_plan_is_launchable (test_interpreter.RowPlanTests.test_every_plan_is_launchable) ... ok
+test_few_wide_rows_split_where_it_paid (test_interpreter.RowPlanTests.test_few_wide_rows_split_where_it_paid) ... ok
+test_grid_script_scores_the_current_and_previous_rules (test_interpreter.RowPlanTests.test_grid_script_scores_the_current_and_previous_rules) ... ok
+test_looped_chunks_follow_row_count_and_width (test_interpreter.RowPlanTests.test_looped_chunks_follow_row_count_and_width) ... ok
+test_rows_up_to_8192_fit_one_block (test_interpreter.RowPlanTests.test_rows_up_to_8192_fit_one_block) ... ok
 test_learner_edits_leave_reference_checks_green_but_kernel_edits_fail (test_workflows.ProvenanceWorkflowTests.test_learner_edits_leave_reference_checks_green_but_kernel_edits_fail) ... ok
 test_new_reports_select_the_requested_implementation (test_workflows.ProvenanceWorkflowTests.test_new_reports_select_the_requested_implementation) ... ok
 test_saved_source_snapshot_preserves_original_hash (test_workflows.ProvenanceWorkflowTests.test_saved_source_snapshot_preserves_original_hash) ... ok
@@ -65,6 +91,6 @@ test_unrelated_mkdocs_sources_are_preserved (test_workflows.SiteBuildTests.test_
 test_wrong_marker_is_not_authorization (test_workflows.SiteBuildTests.test_wrong_marker_is_not_authorization) ... ok
 
 ----------------------------------------------------------------------
-Ran 49 tests in 52.961s
+Ran 69 tests in 692.943s
 
 OK (skipped=2)

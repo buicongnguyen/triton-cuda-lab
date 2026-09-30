@@ -9,11 +9,12 @@ graph, which removes the per-call Python launch cost measured in docs/CASE_STUDI
     import kernel_portfolio.library  # registers torch.ops.kernel_portfolio.*
     y = torch.ops.kernel_portfolio.softmax(x)
 
-softmax and residual_rmsnorm have autograd formulas whose backward passes are the
-custom ops softmax_backward and residual_rmsnorm_backward, so a compiled training
-step traces both directions. add, row_sum and matmul have no autograd formula: they
-accept gradient-tracking inputs but raise if backward reaches them. Double backward
-is not supported. Importing this module requires Triton.
+Every operator has an autograd formula, so a compiled training step traces both
+directions. The backward passes of softmax, residual_rmsnorm and matmul are the custom
+ops softmax_backward, residual_rmsnorm_backward and matmul_grad_a / matmul_grad_b
+(each matmul operand's gradient is its own op, so a frozen operand costs nothing).
+add's gradient is the identity and row_sum's a broadcast view. Double backward is not
+supported. Importing this module requires Triton.
 """
 
 import torch
@@ -32,6 +33,14 @@ def add(x: torch.Tensor, y: torch.Tensor, block_size: int = 256) -> torch.Tensor
     return out
 
 
+def _add_grad(ctx, grad):
+    # Both inputs enter the sum with weight 1: nothing to save, no kernel to run.
+    return grad, grad, None
+
+
+add.register_autograd(_add_grad)
+
+
 @triton_op("kernel_portfolio::row_sum", mutates_args={})
 def row_sum(x: torch.Tensor) -> torch.Tensor:
     out = ops._row_sum_out(x)
@@ -39,6 +48,21 @@ def row_sum(x: torch.Tensor) -> torch.Tensor:
         with ops._on(x.device):
             k.launch_row_sum(x, out, wrap=wrap_triton)
     return out
+
+
+def _row_sum_setup(ctx, inputs, output):
+    (x,) = inputs
+    ctx.shape, ctx.dtype = x.shape, x.dtype
+
+
+def _row_sum_grad(ctx, grad):
+    # d out[r] / d x[r, j] = 1 for every j, so the input gradient is each row's gradient
+    # repeated along the row: a broadcast view with no kernel and no extra memory. The
+    # FP32 row sums' gradient is rounded to the input's dtype, as autograd requires.
+    return grad.to(ctx.dtype).unsqueeze(1).expand(ctx.shape)
+
+
+row_sum.register_autograd(_row_sum_grad, setup_context=_row_sum_setup)
 
 
 @triton_op("kernel_portfolio::softmax", mutates_args={})
@@ -125,3 +149,42 @@ def matmul(a: torch.Tensor, b: torch.Tensor, autotune: bool = True) -> torch.Ten
         with ops._on(a.device):
             k.launch_matmul(a, b, out, autotune, wrap=wrap_triton)
     return out
+
+
+@triton_op("kernel_portfolio::matmul_grad_a", mutates_args={})
+def matmul_grad_a(grad: torch.Tensor, b: torch.Tensor, autotune: bool = True) -> torch.Tensor:
+    da = ops._matmul_grad_a_out(grad, b)
+    if da.numel() and grad.shape[1]:
+        with ops._on(grad.device):
+            k.launch_matmul_grad_a(grad, b, da, autotune, wrap=wrap_triton)
+    return da
+
+
+@triton_op("kernel_portfolio::matmul_grad_b", mutates_args={})
+def matmul_grad_b(grad: torch.Tensor, a: torch.Tensor, autotune: bool = True) -> torch.Tensor:
+    db = ops._matmul_grad_b_out(grad, a)
+    if db.numel() and a.shape[0]:
+        with ops._on(grad.device):
+            k.launch_matmul_grad_b(grad, a, db, autotune, wrap=wrap_triton)
+    return db
+
+
+def _matmul_setup(ctx, inputs, output):
+    a, b, autotune = inputs
+    # Each gradient reads the other operand (dA needs b, dB needs a): keep only what the
+    # gradients that will be computed use, so a frozen operand's partner is not retained.
+    ctx.save_for_backward(
+        b if ctx.needs_input_grad[0] else None, a if ctx.needs_input_grad[1] else None
+    )
+    ctx.autotune = autotune
+
+
+def _matmul_grad(ctx, grad):
+    b, a = ctx.saved_tensors
+    ns = torch.ops.kernel_portfolio
+    da = ns.matmul_grad_a(grad, b, ctx.autotune) if ctx.needs_input_grad[0] else None
+    db = ns.matmul_grad_b(grad, a, ctx.autotune) if ctx.needs_input_grad[1] else None
+    return da, db, None
+
+
+matmul.register_autograd(_matmul_grad, setup_context=_matmul_setup)

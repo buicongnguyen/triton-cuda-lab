@@ -1,0 +1,42 @@
+Triton / PyTorch speedup, FP16, cold L2, 3 full sweeps on NVIDIA GeForce RTX 4080 SUPER.
+Other GPU load before each run (percent): 2, 8, 4
+
+case                                      run 1    run 2    run 3   spread
+add 257 triton_256                        1.05x    1.03x    1.02x       3%
+add 257 triton_1024                       0.99x    1.03x    1.03x       4%
+add 1048576 triton_256                    1.07x    0.95x    0.92x      17%
+add 1048576 triton_1024                   1.12x    1.00x    0.99x      13%
+add 16777216 triton_256                   1.05x    0.92x    0.93x      15%
+add 16777216 triton_1024                  1.08x    1.00x    0.99x       9%
+row_sum 32 x 127 triton                   1.16x    1.16x    1.17x       0%
+row_sum 1024 x 1024 triton                1.06x    1.06x    1.06x       1%
+row_sum 512 x 4097 triton                 1.24x    1.26x    1.26x       1%
+row_sum 16384 x 4096 triton               1.02x    1.08x    0.98x      11%
+row_sum 4 x 32769 triton                  1.01x    1.02x    0.99x       3%
+row_sum 64 x 131072 triton                1.16x    1.16x    1.16x       1%
+softmax 32 x 127 triton_4w                1.13x    1.12x    1.12x       1%
+softmax 32 x 127 triton_8w                1.14x    1.11x    1.12x       2%
+softmax 1024 x 1024 triton_4w             1.55x    1.23x    1.25x      26%
+softmax 1024 x 1024 triton_8w             1.55x    1.24x    1.23x      26%
+softmax 512 x 4097 triton_4w              1.36x    1.37x    1.36x       1%
+softmax 512 x 4097 triton_8w              1.27x    1.31x    1.27x       3%
+softmax 16384 x 4096 triton_4w            1.08x    1.08x    1.06x       2%
+softmax 16384 x 4096 triton_8w            1.09x    1.08x    1.03x       6%
+softmax 4 x 32769 triton                  1.78x    1.80x    1.80x       2%
+softmax 64 x 131072 triton                1.10x    1.08x    1.13x       5%
+rmsnorm 32 x 127 triton                   4.07x    4.10x    4.19x       3%
+rmsnorm 1024 x 1024 triton                3.68x    4.04x    3.93x      10%
+rmsnorm 512 x 4097 triton                 3.63x    3.26x    3.29x      11%
+rmsnorm 16384 x 4096 triton               9.64x    9.54x    9.42x       2%
+rmsnorm 4 x 32769 triton                  3.01x    3.03x    2.98x       2%
+rmsnorm 64 x 131072 triton                3.65x    3.66x    3.54x       3%
+matmul 127 x 255 x 65 triton_fixed        1.44x    1.41x    1.35x       6%
+matmul 127 x 255 x 65 triton_tuned        1.45x    1.43x    1.41x       3%
+matmul 512 x 512 x 512 triton_fixed       0.61x    0.60x    0.59x       4%
+matmul 512 x 512 x 512 triton_tuned       0.81x    0.80x    0.79x       3%
+matmul 1024 x 1024 x 1024 triton_fixed    1.00x    1.00x    1.00x       0%
+matmul 1024 x 1024 x 1024 triton_tuned    1.33x    1.33x    1.33x       0%
+matmul 4096 x 4096 x 4096 triton_fixed    0.77x    0.77x    0.75x       3%
+matmul 4096 x 4096 x 4096 triton_tuned    1.08x    1.06x    1.07x       1%
+
+29 of 36 comparisons agree within 10%; the widest spread is 26%.

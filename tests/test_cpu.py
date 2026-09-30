@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 import unittest.mock
+from pathlib import Path
 
 import torch
 
@@ -46,7 +47,7 @@ class CpuTests(unittest.TestCase):
 
     def test_parameters_allowed_without_autograd(self):
         weight = torch.nn.Parameter(torch.ones(3))
-        with self.assertRaisesRegex(ValueError, "forward-only"):
+        with self.assertRaisesRegex(ValueError, "not differentiable"):
             c.tensor(weight, "weight", ndim=1, gpu=False)
         with torch.no_grad():
             c.tensor(weight, "weight", ndim=1, gpu=False)
@@ -80,6 +81,14 @@ class CpuTests(unittest.TestCase):
         c.matmul_shape(1024, 1024)
         with self.assertRaisesRegex(ValueError, "indexing"):
             c.matmul_shape(65536, 65536)
+        # Kernels round sizes up in 32-bit arithmetic, so a little room below 2**31 is kept.
+        edge = c.INDEX_LIMIT
+        c.tensor(torch.empty_strided((2, 2), (edge - 2, 1), device="meta"), "v", ndim=2, gpu=False)
+        with self.assertRaisesRegex(ValueError, "indexing"):
+            c.tensor(torch.empty_strided((2, 2), (edge, 1), device="meta"), "v", ndim=2, gpu=False)
+        c.matmul_shape(1, edge - 1)
+        with self.assertRaisesRegex(ValueError, "indexing"):
+            c.matmul_shape(1, edge)
         c.matmul_shape(1, 64 * 65535 + 1)  # the 1D tile grid has no N limit
 
     def test_no_silent_cpu_fallback(self):
@@ -87,14 +96,27 @@ class CpuTests(unittest.TestCase):
             ops.softmax(torch.ones(2, 3))
 
     def test_revision_ignores_working_directory(self):
-        expected = revision()
+        # git must run in the package's own directory, whatever directory the caller is in.
+        # (A real git call would make this test depend on how fast git is under load.)
+        seen = []
+
+        def fake_run(args, **kwargs):
+            seen.append(kwargs.get("cwd"))
+            return subprocess.CompletedProcess(args, 0, "abc\n", "")
+
         previous = os.getcwd()
         with tempfile.TemporaryDirectory() as directory:
             os.chdir(directory)
             try:
-                self.assertEqual(revision(), expected)
+                with unittest.mock.patch("kernel_portfolio.benchmark.subprocess.run", fake_run):
+                    revision()
             finally:
                 os.chdir(previous)
+        from kernel_portfolio import benchmark
+
+        package = Path(benchmark.__file__).resolve().parent
+        self.assertTrue(seen)
+        self.assertEqual({Path(cwd).resolve() for cwd in seen}, {package})
 
     def test_revision_takes_no_git_locks(self):
         # A killed `git status` that had taken .git/index.lock would leave the repo locked.
@@ -117,11 +139,17 @@ class CpuTests(unittest.TestCase):
             ["--op", "all", "--shape", "4"],
             ["--op", "add", "--shape", "4", "5"],
             ["--op", "matmul", "--dtype", "float32"],
+            ["--op", "matmul_train", "--dtype", "float32"],
+            ["--op", "training", "--dtype", "float32"],  # includes the GEMM suite
             ["--cache", "lukewarm"],
         ):
             with self.subTest(argv=argv), self.assertRaises(SystemExit):
                 with contextlib.redirect_stderr(io.StringIO()):
                     benchmark_main(argv)
+        message = io.StringIO()
+        with contextlib.redirect_stderr(message), self.assertRaises(SystemExit):
+            benchmark_main(["--op", "matmul_train", "--dtype", "float32"])
+        self.assertIn("GEMM accepts FP16/BF16", message.getvalue())
 
     def test_timing_summary(self):
         stats = summarize([3.0, 1.0, 2.0])

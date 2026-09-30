@@ -6,9 +6,16 @@ test_backward_kernels (test_interpreter.InterpreterTests.test_backward_kernels) 
 ok
 test_gemm_ragged_tiles (test_interpreter.InterpreterTests.test_gemm_ragged_tiles) ... ok
 test_masked_softmax (test_interpreter.InterpreterTests.test_masked_softmax) ... ok
+test_matmul_backward_kernels (test_interpreter.InterpreterTests.test_matmul_backward_kernels) ... ok
 test_row_kernels_with_row_gaps (test_interpreter.InterpreterTests.test_row_kernels_with_row_gaps) ... ok
+test_cpu_interpreter_plans_reach_both_paths (test_interpreter.RowPlanTests.test_cpu_interpreter_plans_reach_both_paths) ... ok
+test_every_plan_is_launchable (test_interpreter.RowPlanTests.test_every_plan_is_launchable) ... ok
+test_few_wide_rows_split_where_it_paid (test_interpreter.RowPlanTests.test_few_wide_rows_split_where_it_paid) ... ok
+test_grid_script_scores_the_current_and_previous_rules (test_interpreter.RowPlanTests.test_grid_script_scores_the_current_and_previous_rules) ... ok
+test_looped_chunks_follow_row_count_and_width (test_interpreter.RowPlanTests.test_looped_chunks_follow_row_count_and_width) ... ok
+test_rows_up_to_8192_fit_one_block (test_interpreter.RowPlanTests.test_rows_up_to_8192_fit_one_block) ... ok
 
 ----------------------------------------------------------------------
-Ran 5 tests in 1.499s
+Ran 12 tests in 4.656s
 
 OK

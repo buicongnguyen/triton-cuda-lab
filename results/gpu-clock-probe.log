@@ -1,0 +1,23 @@
+Softmax 1024 x 1024 FP16, CUDA-graph replay of 20 calls per sample
+GPU state before the probe (SM clock MHz, utilization %): (2550, 11)
+
+Part 1: the softmax right after an idle gap; the GPU was warmed before each gap.
+   gap   SM clock   util   median us per call, by time after
+          at wake          the first call (ms):
+                             0-100   100-400   400-800  800-1200
+   2 s   2835 MHz     6%       2.92      2.92      2.75      2.75
+   5 s   1410 MHz    14%       5.17      5.27      2.97      2.66
+  10 s   2550 MHz     3%       8.40      2.92      2.65      2.45
+  20 s    210 MHz    20%      25.34      2.71      2.45      2.45
+  40 s   2550 MHz     3%       8.39      4.81      2.86      2.65
+
+Part 2: after a 10 s idle gap (which slowed the first calls), a warm-up burst of large
+GEMMs, then a pause, then the softmax; median (min-max) of 3 trials, us per call.
+    burst              pause 0 ms            pause 500 ms
+     none    9.78 (  2.97- 46.59)   17.25 (  2.66-122.93)
+    20 ms   11.32 (  8.86- 11.62)    2.92 (  2.92-  4.34)
+    50 ms    6.91 (  2.92- 10.91)    2.95 (  2.92-  2.97)
+   150 ms    6.40 (  2.92- 11.83)    2.92 (  2.70-  2.92)
+
+benchmark.py warms the GPU for 200 ms before a measurement whenever the previous
+burst ended more than 250 ms earlier.

@@ -27,12 +27,21 @@ SUITES = {
     "softmax": ROW_SHAPES,
     "rmsnorm": ROW_SHAPES,
     "matmul": [(127, 255, 65), (512, 512, 512), (1024, 1024, 1024), (4096, 4096, 4096)],
-    # Forward plus backward through autograd, compared on the input gradient.
+    # Forward plus backward through autograd, compared on the input gradient (softmax,
+    # RMSNorm) or on both operand gradients (matmul, shapes as M, N, K). The last GEMM has
+    # many tokens and a small weight: the weight gradient is a long reduction.
     "softmax_train": ROW_SHAPES,
     "rmsnorm_train": ROW_SHAPES,
+    "matmul_train": [
+        (127, 255, 65),
+        (512, 512, 512),
+        (1024, 1024, 1024),
+        (4096, 4096, 4096),
+        (16384, 1024, 1024),
+    ],
 }
-TRAINING = ("softmax_train", "rmsnorm_train")
-# --op all runs the forward suites; --op training runs both training suites. They are
+TRAINING = ("softmax_train", "rmsnorm_train", "matmul_train")
+# --op all runs the forward suites; --op training runs the training suites. They are
 # separate runs because every prepared case stays in GPU memory until sampling ends.
 GROUPS = {
     "all": [op for op in SUITES if op not in TRAINING],
@@ -51,13 +60,15 @@ def _with_autograd(fn):
 
 
 def _training_case(op, shape, dtype, compile_torch):
-    """One forward and backward pass per call, returning the input gradient.
+    """One forward and backward pass per call, returning the gradient(s) that are checked.
 
     The whole step is timed because a CUDA graph can only replay a backward pass whose
     forward was captured with it. The oracle is the closed-form FP64 gradient.
     """
-    rows, width = shape
     itemsize = torch.empty((), dtype=dtype).element_size()
+    if op == "matmul_train":
+        return _matmul_training_case(shape, dtype, itemsize, compile_torch)
+    rows, width = shape
     with torch.inference_mode(False):
         x = torch.randn(shape, device="cuda", dtype=dtype, requires_grad=True)
         dy = torch.randn(shape, device="cuda", dtype=dtype)
@@ -95,10 +106,34 @@ def _training_case(op, shape, dtype, compile_torch):
     return {name: step(fn) for name, fn in forwards.items()}, oracle.to(dtype), logical
 
 
+def _matmul_training_case(shape, dtype, itemsize, compile_torch):
+    """Forward and both operand gradients of a GEMM; the result is the (dA, dB) pair."""
+    m, n, k = shape
+    with torch.inference_mode(False):
+        a = torch.randn((m, k), device="cuda", dtype=dtype, requires_grad=True)
+        b = torch.randn((k, n), device="cuda", dtype=dtype, requires_grad=True)
+        dy = torch.randn((m, n), device="cuda", dtype=dtype)
+        oracle = (
+            (dy.double() @ b.detach().double().T).to(dtype),
+            (a.detach().double().T @ dy.double()).to(dtype),
+        )
+    forwards = {"torch": torch.mm, "triton": ops.matmul}
+    if compile_torch:
+        forwards["torch_compiled"] = torch.compile(forwards["torch"], fullgraph=True)
+
+    def step(forward):
+        return _with_autograd(lambda: torch.autograd.grad(forward(a, b), (a, b), dy))
+
+    # Forward, dA and dB each read two matrices and write one.
+    logical = 3 * (m * k + k * n + m * n) * itemsize
+    return {name: step(fn) for name, fn in forwards.items()}, oracle, logical
+
+
 def make_case(op, shape, dtype, compile_torch=False):
     """Return named functions, an independent oracle, and minimal logical I/O bytes."""
     if op in TRAINING:
-        return _training_case(op, shape, dtype, compile_torch)
+        functions, expected, logical = _training_case(op, shape, dtype, compile_torch)
+        return functions, expected, logical
     functions, expected, logical = _forward_case(op, shape, dtype)
     if compile_torch:
         functions["torch_compiled"] = torch.compile(functions["torch"], fullgraph=True)
@@ -183,15 +218,20 @@ def _forward_case(op, shape, dtype):
 
 def tolerance(op, dtype):
     if op in ("softmax_backward", "softmax_train"):
-        # Gradients mix saved rounded probabilities with the upstream gradient.
+        # Gradients mix saved rounded probabilities with the upstream gradient, and
+        # g - sum(y * g) cancels, so the error is absolute in the size of g (unit-normal
+        # in the tests), not relative to dx. scripts/tolerance_probe.py reports how much
+        # of each gradient tolerance the worst error uses over many random inputs.
         return {
-            "atol": 1e-4 if dtype == torch.bfloat16 else (1e-5 if dtype == torch.float16 else 1e-6),
+            "atol": 1e-3 if dtype == torch.bfloat16 else (1e-4 if dtype == torch.float16 else 1e-6),
             "rtol": 0.016
             if dtype == torch.bfloat16
             else (0.004 if dtype == torch.float16 else 2e-5),
         }
     if op == "rmsnorm_train":
         op = "rmsnorm"
+    if op == "matmul_train":
+        op = "matmul"
     if op == "row_sum":
         return {"atol": 2e-4, "rtol": 2e-4}
     if op == "matmul":
@@ -210,6 +250,51 @@ def tolerance(op, dtype):
         "atol": 0.02 if dtype == torch.bfloat16 else (0.002 if dtype == torch.float16 else 2e-6),
         "rtol": 0.02 if dtype == torch.bfloat16 else (0.002 if dtype == torch.float16 else 2e-5),
     }
+
+
+# After the GPU has idled for several seconds it starts at reduced clocks, and a small
+# kernel timed in the first few hundred milliseconds can run several times slower than at
+# boost clocks. A burst of large GEMMs wakes the GPU, and the boost outlasts the burst. The
+# burst here is well above the shortest one that worked in scripts/gpu_clock_probe.py, and
+# the re-warm gap is half the pause the boost survived there. docs/CASE_STUDIES.md reports
+# both effects.
+WARMUP_SECONDS = 0.2
+WARMUP_MAX_GAP = 0.25
+_warm = {"operands": None, "end": 0.0, "bursts": 0}
+
+
+def warm_gpu(seconds=WARMUP_SECONDS):
+    """Run large FP16 GEMMs for about `seconds` so the next measurement sees boost clocks."""
+    # The operands are cached for later calls, which may run outside inference mode.
+    with torch.inference_mode(False):
+        if _warm["operands"] is None:
+            a = torch.randn((2048, 2048), device="cuda", dtype=torch.float16)
+            _warm["operands"] = (a, torch.empty_like(a))
+            # The first GEMM of a process also loads cuBLAS, which can take as long as the
+            # whole burst: do it before the clock starts.
+            torch.mm(a, a, out=_warm["operands"][1])
+            torch.cuda.synchronize()
+        a, out = _warm["operands"]
+        start = time.perf_counter()
+        while time.perf_counter() - start < seconds:
+            for _ in range(25):
+                torch.mm(a, a, out=out)
+            torch.cuda.synchronize()
+        _warm["end"] = time.perf_counter()
+        _warm["bursts"] += 1
+
+
+def ensure_warm():
+    """Warm the GPU unless a burst ended within the last WARMUP_MAX_GAP seconds."""
+    if time.perf_counter() - _warm["end"] > WARMUP_MAX_GAP:
+        warm_gpu()
+
+
+def max_abs_error(result, expected):
+    """Largest absolute difference; results and oracles may be tuples of tensors."""
+    if isinstance(expected, (tuple, list)):
+        return max(max_abs_error(r, e) for r, e in zip(result, expected))
+    return (result.float() - expected.float()).abs().max().item()
 
 
 def prepare_timer(fn, timing, iterations):
@@ -356,8 +441,9 @@ def main(argv=None):
         parser.error("A custom positive shape requires one --op")
     if args.shape and len(args.shape) != len(SUITES[args.op][0]):
         parser.error("Shape rank does not match operation")
-    if args.dtype == "float32" and args.op in ("all", "matmul"):
-        parser.error("GEMM accepts FP16/BF16; use --op for FP32 row/vector kernels")
+    gemm_suites = {"matmul", "matmul_train"}
+    if args.dtype == "float32" and gemm_suites & set(GROUPS.get(args.op, [args.op])):
+        parser.error("GEMM accepts FP16/BF16; use --op with a row or vector operation for FP32")
     if not torch.cuda.is_available() or torch.version.hip is not None:
         parser.error("An NVIDIA GPU is required; see docs/SETUP.md")
     torch.manual_seed(args.seed)
@@ -378,6 +464,7 @@ def main(argv=None):
         "cases": [],
     }
     selected = {op: SUITES[op] for op in GROUPS.get(args.op, [args.op])}
+    bursts_before = _warm["bursts"]  # the counter spans every run in this process
     # Other programs' GPU use, sampled before this run starts and after it ends.
     busy = {"before": gpu_utilization()}
     if busy["before"] and statistics.median(busy["before"]) >= 10:
@@ -405,13 +492,20 @@ def main(argv=None):
                 for name, fn in functions.items():
                     result = fn()
                     torch.testing.assert_close(result, expected, **tolerance(op, dtype))
-                    errors[name] = (result.float() - expected.float()).abs().max().item()
+                    errors[name] = max_abs_error(result, expected)
                     timers[name] = prepare_timer(fn, args.timing, calls_per_timer)
-                if op == "matmul":
-                    from .triton_kernels import _matmul_tuned
+                if op in ("matmul", "matmul_train"):
+                    from . import triton_kernels as kernels
 
                     # best_config belongs to the last tuned call: record it for this shape now.
-                    case["autotune_config"] = str(_matmul_tuned.best_config)
+                    case["autotune_config"] = str(kernels._matmul_tuned.best_config)
+                    if op == "matmul_train":
+                        case["autotune_config_grad_a"] = str(
+                            kernels._matmul_grad_a_tuned.best_config
+                        )
+                        case["autotune_config_grad_b"] = str(
+                            kernels._matmul_grad_b_tuned.best_config
+                        )
                 # A captured graph replays at its inputs' addresses, and only the functions
                 # own those inputs: keep them alive for as long as the graph can replay.
                 prepared.append(
@@ -426,6 +520,7 @@ def main(argv=None):
         for _ in range(args.visits):
             for i in rng.sample(range(len(prepared)), len(prepared)):
                 timers = prepared[i]["timers"]
+                ensure_warm()
                 # Untimed first: after other cases ran, a graph's first replay pays to reload
                 # it and warm the caches, which timing a case back to back never sees.
                 for run, _ in timers.values():
@@ -453,9 +548,10 @@ def main(argv=None):
                     max_abs_error=errors[name],
                     logical_gbps=case["logical_bytes"] / (ms * 1e6),
                 )
-                if op == "matmul":
+                if op in ("matmul", "matmul_train"):
                     m, n, k = shape
-                    stats["tflops"] = 2 * m * n * k / (ms * 1e9)
+                    flops = 2 * m * n * k * (3 if op == "matmul_train" else 1)
+                    stats["tflops"] = flops / (ms * 1e9)
                 case["variants"][name] = stats
                 print(f"{op:8} {str(shape):23} {name:18} {ms * 1e3:9.3f} us {baseline / ms:6.2f}x")
             report["cases"].append(case)
@@ -464,6 +560,11 @@ def main(argv=None):
     time.sleep(0.5)  # let this process's own work drop out of the utilization window
     busy["after"] = gpu_utilization()
     report["gpu_utilization_percent"] = busy
+    report["warmup"] = {
+        "burst_seconds": WARMUP_SECONDS,
+        "max_gap_seconds": WARMUP_MAX_GAP,
+        "bursts": _warm["bursts"] - bursts_before,
+    }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Saved {args.output}")

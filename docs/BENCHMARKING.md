@@ -6,7 +6,9 @@ environment, PowerShell or WSL ([every new terminal](SETUP.md#every-new-terminal
 Compare timings only within one environment: the recorded results came from WSL.
 
 Run from a quiet machine. Close GPU-heavy applications if you want a clean repeat;
-the saved local results came from a desktop GPU under WSL/Windows and can vary.
+the saved local results came from a desktop GPU under WSL/Windows and can vary. The
+benchmark warms the GPU itself (see *GPU clocks* below) but cannot keep other programs
+from taking time slices.
 
 ```bash
 kernel-bench --op all --dtype float16 --output results/local/all.json
@@ -17,8 +19,9 @@ kernel-bench --op rmsnorm --compile --output results/local/norm-compiled.json
 kernel-bench --op matmul --dtype bfloat16 --output results/local/gemm-bf16.json
 # Separate dispatch-sensitive measurement; do not mix it with graph numbers.
 kernel-bench --op softmax --timing events --output results/local/softmax-events.json
-# Forward + backward through autograd for softmax and residual RMSNorm.
+# Forward + backward through autograd: softmax, residual RMSNorm and GEMM.
 kernel-bench --op training --compile --output results/local/training.json
+kernel-bench --op matmul_train --shape 16384 1024 1024 --output results/local/gemm-train.json
 ```
 
 Every variant passes an independent double-precision oracle before timing. Random
@@ -31,13 +34,14 @@ eager kernels, so a large ratio against it mostly counts launches.
 claiming a manual-fusion advantage over a compiler. GEMM compares to `torch.mm` with reduced-precision
 reduction disabled. Input/output conversion and tolerances are recorded by code.
 
-The training suites (`--op training`, or `softmax_train` and `rmsnorm_train` alone)
-time one forward and one backward pass through autograd per call and check the
-input gradient against a closed-form FP64 gradient. The whole step is timed because
-a CUDA graph can only replay a backward pass whose forward was captured with it.
-They run separately from `--op all`: every prepared case stays in GPU memory until
-sampling ends, and training cases also keep activations for backward. With
-`--compile`, the PyTorch forward is compiled and its backward comes from AOTAutograd.
+The training suites (`--op training`, or `softmax_train`, `rmsnorm_train` and
+`matmul_train` alone) time one forward and one backward pass through autograd per call
+and check the input gradient (softmax, RMSNorm) or both operand gradients (GEMM, whose
+shapes are `M N K`) against an FP64 gradient. The whole step is timed because a CUDA
+graph can only replay a backward pass whose forward was captured with it. They run
+separately from `--op all`: every prepared case stays in GPU memory until sampling
+ends, and training cases also keep activations for backward. With `--compile`, the
+PyTorch forward is compiled and its backward comes from AOTAutograd.
 
 The default captures 30 invocations per CUDA graph after correctness, JIT,
 autotuning and five warmup calls. Each of nine samples times a graph replay using
@@ -46,7 +50,9 @@ visited three times (`--visits`) in a random order across the run. A visit repla
 each variant once untimed, then takes three shuffled rounds of the case's variants
 back to back, so a ratio compares measurements taken moments apart. On a GPU shared
 with desktop applications, a burst of activity then spoils one visit of one case,
-which the median of nine samples discards. Two simpler designs failed on this
+which the median of nine samples discards. The recorded sweeps use `--samples 15
+--visits 5`, so a burst has to spoil three of five visits, not two of three, to move a
+case's median. Two simpler designs failed on this
 machine: timing each case in one block let a burst slow a whole case 2-3x, and
 interleaving every sample of every case separated a case's variants in time and
 made tiny kernels pay to reload their graphs. These numbers
@@ -65,6 +71,19 @@ single-call timings. The flush keeps the GPU busy while the host submits the nex
 call, so cold results approximate device time in both timing modes. Each row
 operator's `16384 x 4096` shape exceeds L2 even in FP16, so warm mode also includes
 one DRAM-bound case per memory-bound operator.
+
+**GPU clocks.** A GPU that has been idle for several seconds starts at reduced clocks, and a
+kernel timed while they climb back can run several times slower than it will a moment later.
+In [the probe](../results/gpu-clock-probe.log) (`python scripts/gpu_clock_probe.py`) a 2.5 us
+softmax took about 25 us in the first 100 ms after a 20 s pause; the
+[case study](CASE_STUDIES.md#gpu-clocks-the-first-calls-after-an-idle-pause) has the table. How
+long and how bad depends on what else uses the GPU, and a busy desktop can hide it.
+`kernel-bench` therefore runs a 200 ms burst of large FP16 GEMMs before each visit to a case,
+unless a burst ended within the last 250 ms, outside every timed region and CUDA-graph capture;
+it replays every variant once untimed before sampling and records the settings in `warmup`.
+Sweeps keep the GPU busy, so this mostly protects the first case and any case that follows a
+pause: a sweep taken before the warm-up existed gave the same ratios. Your own timing loops need
+the same care.
 
 **Compilation.** Row width and GEMM N/K are `constexpr`, so Triton compiles once per
 width or weight shape. Element counts, row counts, strides and GEMM M are runtime
@@ -85,8 +104,9 @@ versions, GPU, seed, timing settings, Git state and Python source hashes. Source
 hashes identify the implementation even before a first commit exists.
 `gpu_utilization_percent` records nvidia-smi's GPU utilization over about a second
 before the run starts and again after it ends, while this process is idle: the
-load other programs put on the GPU. The benchmark warns when it is 10% or more. No speedup
-threshold is asserted; regressions are valid measurements. All displayed ratios
+load other programs put on the GPU. The benchmark warns when it is 10% or more.
+`warmup` records the burst length, the re-warm gap and how many bursts ran (see *GPU
+clocks*). No speedup threshold is asserted; regressions are valid measurements. All displayed ratios
 use the PyTorch eager median for that same case and timing mode.
 
 Workshop reports with schema version 2 fingerprint the selected implementation
@@ -106,14 +126,35 @@ RMSNorm counts two activation reads, one write, and one weight vector, assuming
 ideal weight reuse. GEMM's TFLOP/s uses `2*M*N*K`; its I/O count assumes each
 matrix is read once. A softmax training step counts five tensor passes (forward:
 read x, write y; backward: read y and the gradient, write dx); an RMSNorm step
-counts seven, plus three weight-sized vectors. Cache reuse and actual traffic require profiling counters.
+counts seven, plus three weight-sized vectors. A GEMM training step counts three
+GEMMs (the forward product and one gradient per operand: `6*M*N*K` FLOPs) and three
+times the forward's matrix traffic. Cache reuse and actual traffic require profiling counters.
 
 Standalone CUDA JSON uses native Windows CUDA events over 50 launches and fifteen
-samples, taking one sample of every kernel per round in rotating order. It
-preallocates outputs, tests against CPU references, and reports FP32.
+samples, taking one sample of every kernel per round in rotating order, after a
+250 ms compute-bound warm-up. It preallocates outputs, tests against CPU references,
+and reports FP32. `python scripts/cuda_runs.py` runs it three times and prints the
+medians side by side.
 Its serial softmax is a pedagogical parallelization baseline. Do not compare its
 absolute times directly against WSL Triton CUDA-graph numbers or call that ratio
 a framework speedup.
+
+## Companion scripts
+
+Each script prints a table and warms the GPU first; the logs in [results/](../results/)
+come from them.
+
+| Script | Question it answers | Log |
+| --- | --- | --- |
+| `scripts/gpu_clock_probe.py` | How much do idle GPU clocks distort a short timing, and how long does a warm-up burst last? | [gpu-clock-probe.log](../results/gpu-clock-probe.log) |
+| `scripts/benchmark_stability.py` | How far do Triton/PyTorch ratios move between full sweeps? | [warm](../results/benchmark-stability.log), [cold](../results/benchmark-stability-cold.log) |
+| `scripts/row_plan_grid.py` | Which plan is fastest for each row count and width, and how do the rules score against the best plan? | [row-plan-grid.log](../results/row-plan-grid.log), [repeat](../results/row-plan-grid-repeat.log) |
+| `scripts/row_chunk_sweep.py` | The same, at four hand-picked shapes | [row-chunk-sweep.log](../results/row-chunk-sweep.log) |
+| `scripts/specialization_sweep.py` | What do compile-time sizes buy and cost? | [specialization-sweep.log](../results/specialization-sweep.log) |
+| `scripts/gemm_grouping.py` | Does grouped tile order matter on this GPU? | [gemm-grouping.log](../results/gemm-grouping.log) |
+| `scripts/compile_overhead.py`, `scripts/wrapper_overhead.py` | Host time per call: eager wrappers, custom ops, `torch.compile` | [compile](../results/compile-overhead.log), [wrapper](../results/wrapper-overhead.log) |
+| `scripts/tolerance_probe.py` | How much of each gradient test tolerance does the worst error use, over many random inputs? | [tolerance-probe.log](../results/tolerance-probe.log) |
+| `scripts/cuda_runs.py` | Three runs of the standalone CUDA program, side by side | [cuda-softmax-runs.log](../results/cuda-softmax-runs.log) |
 
 For a defensible claim: repeat on the target hardware, keep an unfavorable shape,
 compare against `torch.compile`, note errors/limits, and trace the full model before

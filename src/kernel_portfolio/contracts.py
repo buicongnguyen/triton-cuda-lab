@@ -5,6 +5,9 @@ import math
 import torch
 
 DTYPES = (torch.float16, torch.bfloat16, torch.float32)
+# Kernels compute offsets and ceiling divisions in signed 32 bits (n + block - 1, a block
+# past the last element), so sizes stop this far below 2**31.
+INDEX_LIMIT = 2**31 - 2**16
 # Rows wider than 8192 use looped kernels; this bound keeps tests able to reach it.
 MAX_ROW_WIDTH = 1 << 20
 
@@ -20,16 +23,17 @@ def tensor(x: torch.Tensor, name: str, *, ndim: int, gpu: bool = True) -> None:
         raise TypeError(f"{name} must have float16, bfloat16, or float32 dtype")
     # Parameters keep requires_grad=True under no_grad/inference_mode; only reject
     # them when autograd would otherwise record a graph this kernel cannot extend.
-    # (softmax and residual_rmsnorm route gradient-tracking inputs to their custom ops,
-    # whose autograd formula runs this check with gradients disabled.)
+    # (The operators route gradient-tracking inputs to their custom ops, whose implementation
+    # runs this check with gradients disabled; direct calls to a backward function get here.)
     if x.requires_grad and torch.is_grad_enabled():
         raise ValueError(
-            "This operator is forward-only (only softmax and residual_rmsnorm support "
-            "autograd); use torch.no_grad()/inference_mode() or detach"
+            "Backward kernels are not differentiable (double backward is unsupported); "
+            "use torch.no_grad()/inference_mode() or detach"
         )
     # Kernel pointer offsets use signed 32-bit arithmetic. Check the physical span,
     # not just numel: a narrow view can have a very large row stride.
-    if x.numel() and sum((size - 1) * stride for size, stride in zip(x.shape, x.stride())) >= 2**31:
+    span = sum((size - 1) * stride for size, stride in zip(x.shape, x.stride()))
+    if x.numel() and span >= INDEX_LIMIT:
         raise ValueError("Tensor address span exceeds the supported 32-bit indexing range")
     if gpu and (not x.is_cuda or torch.version.hip is not None):
         raise ValueError(f"{name} must be on an NVIDIA CUDA device")
@@ -62,5 +66,5 @@ def epsilon(eps: float) -> None:
 
 def matmul_shape(m: int, n: int) -> None:
     # The 1D tile grid has no practical limit; output offsets must fit signed 32 bits.
-    if m * n >= 2**31:
+    if m * n >= INDEX_LIMIT:
         raise ValueError("GEMM output exceeds the supported 32-bit indexing range")

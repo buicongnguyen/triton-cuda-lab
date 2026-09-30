@@ -72,9 +72,10 @@ overhead; neither number alone represents an entire model or service.
 - **Softmax:** two reductions operate on the same row; padding is algebraically
   neutral; output addresses use the new contiguous layout.
 
-A learner should also explain why no kernel computes a backward gradient here,
-why `torch.empty` requires every valid output to be written, and why a tested
-contract is narrower than “works for any tensor.”
+A learner should also explain why these exercise kernels compute no backward gradient
+(the portfolio's backward kernels and workshop I2 are the next step), why
+`torch.empty` requires every valid output to be written, and why a tested contract is
+narrower than “works for any tensor.”
 
 ## Lesson 9
 

@@ -5,9 +5,9 @@ compiled kernel variant on a modest shape, in every supported dtype (each dtype 
 separate compilation): add; every row plan of each row kernel (one block, split
 across programs, and both looped chunkings), with softmax also given -inf masked
 entries; the softmax and residual RMSNorm backward kernels on every plan, including
-the weight-gradient kernel; the fixed GEMM and every autotuning configuration in FP16
-and BF16; and one call through the torch.compile custom ops. Results are compared
-with PyTorch.
+the weight-gradient kernels; the fixed GEMM and every autotuning configuration in FP16
+and BF16, forward and both backward products; and one call through the torch.compile
+custom ops. Results are compared with PyTorch.
 
     compute-sanitizer --tool racecheck --error-exitcode 1 python scripts/sanitizer_smoke.py
 """
@@ -32,9 +32,10 @@ def row_kernels(dtype):
     sms = k._sm_count(0)
     rows_per_path = {
         "single block": (7, 33),
-        "split (few wide rows; row sum loops)": (3, 20000),
-        "looped, 8192-wide chunks": (sms, 8193),
-        "looped, 2048-wide chunks": (2 * sms, 8193),
+        "split (softmax and RMSNorm; row sum loops)": (3, 20000),
+        "looped, 8192-wide chunks, few rows (softmax splits)": (3, 8193),
+        "looped, 4096-wide chunks": (sms, 8193),
+        "looped, 8192-wide chunks, wide rows": (sms, 32769),
     }
     for label, (rows, width) in rows_per_path.items():
         label = f"{label}, {dtype}"
@@ -106,6 +107,37 @@ def gemm(dtype):
             print(f"skip {config} (exceeds this GPU's shared memory)")
             continue
         check(f"matmul, {config}, {dtype}", out, expected, "matmul")
+    gemm_backward(a, b, dtype)
+
+
+def gemm_backward(a, b, dtype):
+    """Both backward products, fixed tile and every configuration, with a transposed gradient."""
+    m, kk = a.shape
+    n = b.shape[1]
+    g = torch.randn((n, m), device="cuda", dtype=dtype).T
+    da_expected = (g.double() @ b.double().T).to(dtype)
+    db_expected = (a.double().T @ g.double()).to(dtype)
+    da, db = ops.matmul_backward(g, a, b, autotune=False)
+    check(f"matmul dA, fixed tile, {dtype}", da, da_expected, "matmul")
+    check(f"matmul dB, fixed tile, {dtype}", db, db_expected, "matmul")
+    products = (
+        ("dA", g, b, (m, kk), (m, kk, n), g.stride(), b.t().stride(), da_expected),
+        ("dB", a, g, (kk, n), (kk, n, m), a.t().stride(), g.stride(), db_expected),
+    )
+    for config in k._matmul_tuned.configs:
+        meta = config.kwargs
+        for name, x, y, shape, (rows, cols, red), xs, ys, expected in products:
+            out = torch.empty(shape, device="cuda", dtype=dtype)
+            grid = (triton.cdiv(rows, meta["BM"]) * triton.cdiv(cols, meta["BN"]),)
+            args = (x, y, out, rows, k.m_bucket(rows), red, k.m_bucket(red), *xs, *ys, cols)
+            try:
+                k._matmul_strided[grid](
+                    *args, **meta, num_warps=config.num_warps, num_stages=config.num_stages
+                )
+            except triton.runtime.errors.OutOfResources:
+                print(f"skip {config} (exceeds this GPU's shared memory)")
+                continue
+            check(f"matmul {name}, {config}, {dtype}", out, expected, "matmul")
 
 
 def main():

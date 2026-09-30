@@ -78,7 +78,10 @@ after an 8192-wide test exposed normalization drift. Explain how a tree reductio
 changes error accumulation. Exit criterion: defend one optimization using the
 JSON measurements, explain why a `-inf` (masked) score is safe in the single-block
 kernel but needed a guard in the looped one, and explain why rows wider than
-8192 switch to a looped kernel whose chunk size depends on the row count.
+8192 switch to a looped kernel whose chunk size depends on the row count and the width.
+Then run `python scripts/row_plan_grid.py --quick` and find a shape where the automatic
+plan is not the fastest one; the full run ends with a score of the rule against the one
+it replaced.
 
 ## 4. Residual RMSNorm: fuse without changing the contract
 
@@ -119,7 +122,16 @@ the winner can lose to a fixed tile in a separate graph benchmark.
 
 Exercise: draw a ragged 127x255 output with K=65, then sweep a square shape.
 Report `2*M*N*K / seconds` and the ratio to `torch.mm`. Keep the case where
-cuBLAS wins. Exit criterion: explain why a useful demonstration is not a replacement
+cuBLAS wins.
+
+Training needs two more GEMMs with transposed operands: for `C = A @ B`, the gradients
+are `dA = dC @ B^T` and `dB = A^T @ dC`. Neither transpose is copied: one kernel takes
+explicit strides, so `B^T` is `B` read with its strides swapped. The token count varies
+per request and stays a runtime argument; the model dimensions stay compile-time.
+Time it with `kernel-bench --op matmul_train`. Its last shape has 16384 tokens and a
+1024 x 1024 weight, so `dB` is a 16384-long reduction into a small output. Exercise:
+say which of the three GEMMs has the least parallelism at that shape, what a split-K
+version would change, and what it would cost in determinism. Exit criterion: explain why a useful demonstration is not a replacement
 for cuBLAS. Then run `python scripts/gemm_grouping.py`, which compares `GROUP_M=1`
 (row-major tiles) with grouped order on one tile. On the RTX 4080 SUPER it made no
 measurable difference; explain why an L2 larger than B leaves little to recover.
@@ -130,6 +142,10 @@ measurable difference; explain why an L2 larger than B leaves little to recover.
 python scripts/inspect_kernel.py --op softmax
 python scripts/profile_kernel.py --op softmax
 ```
+
+Before trusting a timing of a few microseconds, run `python scripts/gpu_clock_probe.py`:
+an idle GPU starts at reduced clocks, so a loop that starts right after a pause can measure
+the clock ramp. `kernel-bench` warms the GPU for you; your own loops must too.
 
 Follow [PROFILING.md](PROFILING.md) and review [CASE_STUDIES.md](CASE_STUDIES.md).
 Separate observations from hypotheses:

@@ -34,22 +34,32 @@ a CUDA graph, times replay with CUDA events and divides by the invocation count.
 That estimates a repeated device workload. `--timing events` submits calls through
 Python and can include gaps while the host prepares the next launch.
 
+A GPU also changes speed while you measure. After it has idled for several seconds it
+starts at reduced clocks, and a small kernel timed in the first few hundred milliseconds can
+run several times slower than a moment later: on this machine a 2.5 us softmax took about
+25 us right after a 20 s pause. A timing loop that starts cold therefore measures the clock
+ramp, not the kernel. The benchmark runs a short burst of large matrix multiplies before it
+times anything (`warm_gpu` in [benchmark.py](../../src/kernel_portfolio/benchmark.py)), outside
+every timed region. Do the same in your own loops, and run `python scripts/gpu_clock_probe.py`
+to see whether your GPU does it: a busy desktop can hide the effect.
+
 ## Read two actual measurements
 
 For FP16 softmax with shape 1024x1024, the saved runs show:
 
 | Timing mode | PyTorch | Triton, 4 warps | baseline/candidate |
 | --- | ---: | ---: | ---: |
-| Graph replay, inputs warm in L2 | 4.198 us | 2.423 us | 1.73x |
-| Graph replay, L2 flushed before each call | 15.163 us | 9.455 us | 1.60x |
-| Ordinary event-timed wrapper | 8.363 us | 21.436 us | 0.39x |
+| Graph replay, inputs warm in L2 | 4.368 us | 2.558 us | 1.71x |
+| Graph replay, L2 flushed before each call | 12.186 us | 9.830 us | 1.24x |
+| Ordinary event-timed wrapper | 17.583 us | 64.098 us | 0.27x |
 
 These rows answer different questions. The kernel's captured device work can be
 fast while the validated Python wrapper is expensive for tiny calls. The 2 MiB FP16
 input and 2 MiB output fit in this GPU's 64 MiB L2, so the warm row measures cache-resident repeats; the
 flushed row reads from DRAM and shows a smaller advantage. On this desktop GPU,
 shared with other applications, the flushed ratio for this shape ranged from 1.23x
-to 1.67x across runs, a reminder to repeat a measurement before trusting a digit.
+to 1.55x across three runs ([log](../../results/benchmark-stability-cold.log)), a
+reminder to repeat a measurement before trusting a digit.
 The measurements do not justify calling every use of the custom operator faster. See the
 [raw evidence and explanation](../../docs/CASE_STUDIES.md).
 

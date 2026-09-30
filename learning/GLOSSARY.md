@@ -70,6 +70,9 @@ Lesson numbers refer to the [beginner course](README.md).
 | CUDA graph / graph replay | A recorded sequence of launches replayed with almost no Python cost. The default benchmark mode | Lesson 7 |
 | Event timing mode | `--timing events`: ordinary Python calls, so host dispatch gaps are included | Lesson 7 |
 | Warm vs cold cache | Warm: inputs likely already in L2 from the previous call. Cold (`--cache cold`): L2 flushed first, so data comes from DRAM | Lesson 7 |
+| GPU clocks / boost | The GPU lowers its clock speed when idle and raises it under load. The climb takes a few hundred milliseconds, so a timing taken right after a pause can run several times slower | Lesson 7 |
+| GPU warm-up | A burst of compute-bound work (large matrix multiplies) run before timing so the GPU is at boost clocks. Separate from JIT warm-up, which only compiles | Lesson 7 |
+| Regret | How much slower a rule's choice is than the best choice for the same shape (time / best time - 1). Used to compare tuning rules over a grid of shapes | [Case studies](../docs/CASE_STUDIES.md#wide-rows-loop-in-one-program-or-split-across-programs) |
 | Logical GB/s | Minimum useful bytes / time. A model, not a hardware counter; above DRAM peak means the data came from cache | Lesson 7 |
 | TFLOP/s | `2*M*N*K / seconds` for GEMM: trillions of floating-point operations per second | Lab 5 |
 | Arithmetic intensity | Operations per byte moved. Low intensity means memory-bound | Lesson 6 |
@@ -83,7 +86,7 @@ Lesson numbers refer to the [beginner course](README.md).
 | Term | Meaning | First needed |
 | --- | --- | --- |
 | Jacobian / VJP | Matrix of all partial derivatives / vector-Jacobian product: the gradient a backward pass actually needs | Workshop I2 |
-| Autograd | PyTorch's automatic differentiation. The portfolio's softmax and residual RMSNorm register Triton backward kernels with it; the other operators are forward-only | Workshop I2 |
+| Autograd | PyTorch's automatic differentiation. Every portfolio operator registers a backward pass with it: Triton kernels for softmax, residual RMSNorm and GEMM, exact formulas for add and row sum | Workshop I2 |
 | Epilogue | Work applied to a GEMM result before storing it, e.g. bias and ReLU | Workshop I3 |
 | Grouped tile ordering | Launching output tiles so neighbors reuse cached inputs; `GROUP` in the fused GEMM | Workshop I3 |
 | Online normalizer | Mergeable `(max, sum)` state that lets softmax statistics be computed chunk by chunk | Workshop A1 |

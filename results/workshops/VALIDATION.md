@@ -55,8 +55,8 @@ Raw data: [graph-fp16.json](graph-fp16.json), [events-fp16.json](events-fp16.jso
 Readable command output: [graph.log](graph.log), [events.log](events.log).
 Each run used FP16 inputs, **7 samples of 20 calls**, five warmup calls per variant,
 and randomized variant order within each sample. Compilation happened before
-timing. Both runs covered ten operation/shape cases and 38 variant measurements
-each (76 total), with every individual sample preserved.
+timing, and the GPU was warmed before each case. Both runs covered ten operation/shape
+cases and 38 variant measurements each (76 total), with every individual sample preserved.
 
 The table selects the **same candidate configuration in both timing modes**.
 Latency is the median in microseconds; speedup is baseline/candidate. GEMM shape
@@ -64,16 +64,16 @@ order is M,N,K; attention is N,D and causal=True. Strided inputs are transposes.
 
 | Operator / shape | Candidate | Graph baseline / candidate (us) | Graph ratio | Event ratio |
 | --- | --- | ---: | ---: | ---: |
-| Strided softmax, 256x257 | direct_4w | 3.891 / 2.336 | 1.67x | 0.69x |
-| Strided softmax, 1024x1024 | direct_4w | 18.842 / 15.565 | 1.21x | 1.00x |
-| Softmax VJP, 256x1025 | fused_vjp | 13.501 / 1.792 | 7.53x | 2.41x |
-| Softmax VJP, 1024x4097 | fused_vjp | 127.885 / 14.234 | 8.98x | 5.65x |
-| GEMM+bias+ReLU, 127x65x33 | group_4 | 12.083 / 2.304 | 5.24x | 2.61x |
-| GEMM+bias+ReLU, 512x512x512 | group_4 | 30.046 / 6.901 | 4.35x | 2.61x |
-| Split softmax, 4x32769 | chunk_1024 | 8.704 / 3.891 | 2.24x | 0.22x |
-| Split softmax, 64x131072 | chunk_4096 | 25.856 / 19.661 | 1.32x | 0.54x |
-| Attention, 129x32 | stream_bn64 | 6.861 / 3.174 | 2.16x | 0.77x |
-| Attention, 512x64 | stream_bn64 | 8.550 / 8.806 | 0.97x | 0.94x |
+| Strided softmax, 256x257 | direct_4w | 3.774 / 2.304 | 1.64x | 0.62x |
+| Strided softmax, 1024x1024 | direct_4w | 17.357 / 14.434 | 1.20x | 0.86x |
+| Softmax VJP, 256x1025 | fused_vjp | 12.698 / 1.792 | 7.09x | 2.19x |
+| Softmax VJP, 1024x4097 | fused_vjp | 123.187 / 13.414 | 9.18x | 2.21x |
+| GEMM+bias+ReLU, 127x65x33 | group_4 | 11.264 / 2.304 | 4.89x | 2.74x |
+| GEMM+bias+ReLU, 512x512x512 | group_4 | 28.774 / 6.502 | 4.43x | 2.06x |
+| Split softmax, 4x32769 | chunk_1024 | 8.074 / 4.915 | 1.64x | 0.14x |
+| Split softmax, 64x131072 | chunk_4096 | 23.501 / 18.586 | 1.26x | 0.27x |
+| Attention, 129x32 | stream_bn64 | 6.758 / 3.366 | 2.01x | 0.72x |
+| Attention, 512x64 | stream_bn64 | 8.499 / 8.235 | 1.03x | 1.01x |
 
 Interpretation matters:
 
@@ -86,16 +86,17 @@ Interpretation matters:
   These ratios **do not establish a win over fused half-precision cuBLASLt**.
   GROUP=1/4/8 were nearly tied at 512-cubed; the dispersion does not support a
   cache-efficiency claim or a convincing winner among those group sizes.
-- **Split softmax:** chunk_256 at 64x131072 took 54.016 us in graph mode, **0.48x**
+- **Split softmax:** chunk_256 at 64x131072 took 49.152 us in graph mode, **0.48x**
   the PyTorch baseline. More programs were not automatically better. In event
   timing all three split candidates lost on both shapes; Python dispatch and
   three launches change the result materially.
 - **Attention:** the primary baseline is PyTorch SDPA with automatic backend
-  selection. BN=64 won the small graph case (2.16x) but did not establish a win on
-  the larger case; its 0.97x result is close enough to treat as roughly tied. BN=32
-  was clearly slower in the larger graph case at 0.71x. In event timing BN=64
-  measured 0.77x and 0.94x here; earlier runs measured 0.32x and 1.00x
-  (2026-09-25), then 1.09x and 1.37x, and 0.65x and 0.83x (2026-09-26). Event ratios
+  selection. BN=64 won the small graph case (2.01x) but did not establish a win on
+  the larger case; its 1.03x result is close enough to treat as roughly tied. BN=32
+  was clearly slower in the larger graph case at 0.76x. In event timing BN=64
+  measured 0.72x and 1.01x here; earlier runs measured 0.32x and 1.00x
+  (2026-09-25), then 1.09x and 1.37x, and 0.65x and 0.83x (2026-09-26), and 0.77x and
+  0.94x earlier on 2026-09-30, before the GPU warm-up existed. Event ratios
   that include Python dispatch of several launches move with host load and do not
   rank these implementations.
 

@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from kernel_portfolio.benchmark import (
+    ensure_warm,
     file_sha256,
     l2_flush_buffer,
     prepare_timer,
@@ -187,6 +188,7 @@ def main(argv=None):
                         errors[label] = (actual.float() - expected.float()).abs().max().item()
                         timers[label] = prepare_timer(fn, args.timing, calls_per_timer)
                         times[label] = []
+                    ensure_warm()  # small kernels are only measured at boost clocks
                     for _ in range(args.samples):
                         labels = list(functions)
                         rng.shuffle(labels)

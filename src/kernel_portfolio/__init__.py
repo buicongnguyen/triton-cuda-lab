@@ -1,4 +1,4 @@
-"""GPU operators; softmax and residual RMSNorm also support autograd.
+"""GPU operators with Triton forward and backward kernels.
 
 Importing this package does not import Triton.
 """
@@ -6,6 +6,7 @@ Importing this package does not import Triton.
 from .ops import (
     add,
     matmul,
+    matmul_backward,
     residual_rmsnorm,
     residual_rmsnorm_backward,
     row_sum,
@@ -21,4 +22,5 @@ __all__ = [
     "residual_rmsnorm",
     "residual_rmsnorm_backward",
     "matmul",
+    "matmul_backward",
 ]

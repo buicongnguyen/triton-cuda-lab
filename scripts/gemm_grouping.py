@@ -11,7 +11,7 @@ import torch
 import triton
 
 from kernel_portfolio import triton_kernels as k
-from kernel_portfolio.benchmark import prepare_timer, sample_ms, tolerance
+from kernel_portfolio.benchmark import ensure_warm, prepare_timer, sample_ms, tolerance
 
 TILE = {"BM": 128, "BN": 128, "BK": 32}  # the autotuner's pick at 4096^3 on an RTX 4080 SUPER
 
@@ -49,6 +49,7 @@ def main():
             run()
             torch.testing.assert_close(out, expected, **tolerance("matmul", torch.float16))
             timer, count = prepare_timer(run, "graph", 10)
+            ensure_warm()
             us = statistics.median(sample_ms(timer, count) for _ in range(7)) * 1e3
             cells.append(f"GROUP_M={group}: {us:9.1f} us {2 * size**3 / (us * 1e6):6.1f} TF")
         print(f"{size}^3  " + " | ".join(cells))

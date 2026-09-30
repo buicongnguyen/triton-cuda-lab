@@ -64,7 +64,8 @@ large CUDA allocation, so a write past the end of one tensor can land inside
 another and go unreported; with caching off, each tensor is its own allocation.
 The GPU tests check that inputs are unchanged but cannot see such a write;
 memcheck can. CUDA-graph capture needs the cache, so with it off the benchmark
-smoke tests switch from graph replay to event timing automatically. As a negative
+smoke tests switch from graph replay to event timing automatically, and the
+training-example tests (sixty steps of a small model, twice) are skipped as too slow. As a negative
 control, a copy kernel with its store mask removed on purpose was reported as
 `Invalid __global__ write` at the unmasked line, while the repository's GPU tests
 reported 0 errors ([log](../results/windows-triton-memcheck.log)).
@@ -81,8 +82,11 @@ compute-sanitizer --tool racecheck --error-exitcode 1 python scripts/sanitizer_s
 
 On Windows, if the sanitizer hangs after the tests finish, run the base interpreter
 instead of the virtual environment's launcher: set `PYTHONPATH` to
-`src;.venv-win\Lib\site-packages` and pass the base `python.exe`. The last run
-reported 0 hazards ([log](../results/windows-triton-racecheck.log)).
+`src;.venv-win\Lib\site-packages` and pass the base `python.exe`. The two launchers
+behave differently from run to run: the smoke script under memcheck ran fine through the
+virtual environment's launcher (a minute) but hung before starting through the base
+interpreter, so if one stalls, try the other. The last run reported 0 hazards
+([log](../results/windows-triton-racecheck.log)).
 
 On Linux with the CUDA Toolkit, the equivalent is
 `PYTORCH_NO_CUDA_MEMORY_CACHING=1 KERNEL_REQUIRE_GPU=1 compute-sanitizer --tool memcheck --error-exitcode 1 python -m unittest tests.test_gpu`.

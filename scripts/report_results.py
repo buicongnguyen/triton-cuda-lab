@@ -50,11 +50,19 @@ def main():
                 for when, values in busy.items()
                 if values
             )
+            warmup = report.get("warmup")
+            warm = (
+                f" GPU warm-up: a {warmup['burst_seconds'] * 1000:.0f} ms burst when the last "
+                f"one ended over {warmup['max_gap_seconds'] * 1000:.0f} ms before "
+                f"({warmup['bursts']} ran)."
+                if warmup
+                else ""
+            )
             lines.extend(
                 [
                     f"{report['environment']['gpu']}; timing: {report['settings']['timing']}; "
                     f"cache: {report['settings'].get('cache', 'warm')}; "
-                    f"UTC: {report['timestamp_utc']}." + (f" {load}." if load else ""),
+                    f"UTC: {report['timestamp_utc']}." + (f" {load}." if load else "") + warm,
                     "",
                     "| Op | Shape | Dtype | Variant | Median (us) | Speedup | Max abs error |",
                     "| --- | --- | --- | --- | ---: | ---: | ---: |",

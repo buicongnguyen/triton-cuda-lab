@@ -32,18 +32,27 @@ def _sm_count(device_index):
     return torch.cuda.get_device_properties(device_index).multi_processor_count
 
 
-def _chunking(rows, device):
+# Rows at most this wide loop in 4096-wide chunks once there are as many rows as SMs.
+# 28672 = 7 x 4096: the grid in scripts/row_plan_grid.py cannot tell it from 32000, and
+# from 50257 on the widest chunk wins. The evidence is in docs/CASE_STUDIES.md.
+NARROW_ROW_WIDTH = 28672
+
+
+def _chunking(rows, n, device):
     """(chunk width, warps) for looped row kernels, one program per row.
 
-    With fewer rows than about two per SM, each program must cover more of its row
-    at once to use the GPU; with many rows, smaller chunks keep more programs resident.
-    Measured on an RTX 4080 SUPER; see docs/CASE_STUDIES.md. Never above
-    SINGLE_BLOCK_MAX, so a looped row always fills its first chunk.
+    A program that walks a long row wants many bytes in flight, which the widest chunk
+    and the most warps give. Smaller chunks paid off only for narrow rows with enough rows
+    to fill the GPU with smaller programs. The previous rule used small chunks for every
+    shape with many rows, which cost wide rows dearly. scripts/row_plan_grid.py times every
+    plan over a grid of row counts and widths and scores both rules against the best plan
+    per shape; docs/CASE_STUDIES.md reports the result.
+    Never above SINGLE_BLOCK_MAX, so a looped row always fills its first chunk.
     """
     if device.type != "cuda":  # Triton interpreter on CPU tensors
         return 2048, 4
-    if rows >= 2 * _sm_count(device.index):
-        return 2048, 4
+    if n <= NARROW_ROW_WIDTH and rows >= _sm_count(device.index):
+        return 4096, 8
     return 8192, 16
 
 
@@ -63,8 +72,9 @@ def _row_plan(op, rows, n, device):
 
     Rows up to SINGLE_BLOCK_MAX fit one block (the caller picks the warps). Wider rows
     with fewer rows than SMs are split into chunks across programs: two launches, but
-    every SM gets work. That won for softmax at every width measured and for RMSNorm
-    above 16384; row sum gained too little to pay for the second launch. Otherwise
+    every SM gets work. That won clearly for softmax and RMSNorm when the rows were far
+    fewer than the SMs and was about even near that count; RMSNorm only gains above
+    width 16384. Row sum gained too little to pay for the second launch. Otherwise
     one program loops over its row (_chunking). See docs/CASE_STUDIES.md.
     """
     if n <= SINGLE_BLOCK_MAX:
@@ -72,7 +82,7 @@ def _row_plan(op, rows, n, device):
     split_above = {"softmax": SINGLE_BLOCK_MAX, "rmsnorm": 2 * SINGLE_BLOCK_MAX}.get(op)
     if split_above is not None and n > split_above and rows < _split_below(device):
         return ("split", 4096, 8) if n > 65536 else ("split", 2048, 4)
-    return ("looped", *_chunking(rows, device))
+    return ("looped", *_chunking(rows, n, device))
 
 
 @triton.jit
@@ -477,6 +487,23 @@ def _rmsnorm_bwd_weight(
     tl.store(PW + group * N + col, acc, col < N)
 
 
+@triton.jit
+def _rmsnorm_bwd_weight_finish(
+    PW, DW, GROUPS, N: tl.constexpr, BLOCK: tl.constexpr, GROUP_TILE: tl.constexpr
+):
+    # Adds the GROUPS partial rows in a fixed order (tiles of GROUP_TILE rows, then one
+    # reduction over the tile axis) and rounds once to the weight's dtype. It replaces
+    # PyTorch's sum and cast, two more launches, and stays deterministic.
+    col = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    lane = tl.arange(0, GROUP_TILE)
+    acc = tl.zeros((GROUP_TILE, BLOCK), tl.float32)
+    for start in range(0, GROUPS, GROUP_TILE):
+        g = start + lane
+        offsets = g[:, None] * N + col[None, :]
+        acc += tl.load(PW + offsets, (g[:, None] < GROUPS) & (col[None, :] < N), other=0)
+    tl.store(DW + col, tl.sum(acc, axis=0).to(DW.dtype.element_ty), col < N)
+
+
 # M_BUCKET only feeds the autotuning key; do_not_specialize avoids extra compiles for it.
 @triton.jit(do_not_specialize=["M_BUCKET"])
 def _matmul(
@@ -516,16 +543,70 @@ def _matmul(
     tl.store(OUT + mi[:, None] * N + nj[None, :], acc, (mi[:, None] < M) & (nj[None, :] < N))
 
 
+@triton.jit
+def _tile_coords(pid, M, N, BM: tl.constexpr, BN: tl.constexpr, GROUP_M: tl.constexpr):
+    # The same grouped program-to-tile mapping as _matmul (workshop I3 derives it).
+    tiles_m = tl.cdiv(M, BM)
+    tiles_n = tl.cdiv(N, BN)
+    group_size = GROUP_M * tiles_n
+    first_m = (pid // group_size) * GROUP_M
+    rows_in_group = tl.minimum(tiles_m - first_m, GROUP_M)
+    return first_m + (pid % group_size) % rows_in_group, (pid % group_size) // rows_in_group
+
+
+# The backward pass of C = A @ B needs two products with transposed operands:
+#   dA = dC @ B^T   (rows: tokens M; reduction: N; output columns: K)
+#   dB = A^T @ dC   (rows: K; reduction: tokens M; output columns: N)
+# Both are OUT = X @ Y with X and Y read through explicit strides, so a transposed
+# operand is a view, never a copy. Tokens vary per request, so the row count and the
+# reduction length are runtime arguments; only the output width, a model dimension,
+# is compile-time. Their buckets feed the autotuning key.
+@triton.jit(do_not_specialize=["M_BUCKET", "K_BUCKET"])
+def _matmul_strided(
+    X,
+    Y,
+    OUT,
+    M,
+    M_BUCKET,
+    K,
+    K_BUCKET,
+    SXM,
+    SXK,
+    SYK,
+    SYN,
+    N: tl.constexpr,
+    BM: tl.constexpr,
+    BN: tl.constexpr,
+    BK: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    tile_m, tile_n = _tile_coords(tl.program_id(0), M, N, BM, BN, GROUP_M)
+    mi = tile_m * BM + tl.arange(0, BM)
+    nj = tile_n * BN + tl.arange(0, BN)
+    kk = tl.arange(0, BK)
+    acc = tl.zeros((BM, BN), dtype=tl.float32)
+    for tile in range(tl.cdiv(K, BK)):
+        k = tile * BK + kk
+        x = tl.load(
+            X + mi[:, None] * SXM + k[None, :] * SXK, (mi[:, None] < M) & (k[None, :] < K), other=0
+        )
+        y = tl.load(
+            Y + k[:, None] * SYK + nj[None, :] * SYN, (k[:, None] < K) & (nj[None, :] < N), other=0
+        )
+        acc = tl.dot(x, y, acc)
+    tl.store(OUT + mi[:, None] * N + nj[None, :], acc, (mi[:, None] < M) & (nj[None, :] < N))
+
+
 def _config(bm, bn, bk, group, warps, stages):
     return triton.Config(
         {"BM": bm, "BN": bn, "BK": bk, "GROUP_M": group}, num_warps=warps, num_stages=stages
     )
 
 
-# Tune once per power-of-two bucket of M, not once per exact token count. Configs that
-# exceed the GPU's shared memory are skipped by the autotuner.
-_matmul_tuned = triton.autotune(
-    configs=[
+def _matmul_configs():
+    """Fresh Config objects per autotuner. Configs that exceed the GPU's shared memory
+    are skipped by the autotuner."""
+    return [
         _config(32, 64, 32, 1, 4, 2),
         _config(64, 64, 32, 8, 4, 3),
         _config(64, 128, 32, 8, 4, 4),
@@ -534,9 +615,18 @@ _matmul_tuned = triton.autotune(
         _config(128, 128, 32, 8, 8, 3),
         _config(128, 128, 64, 8, 8, 2),
         _config(128, 256, 32, 8, 8, 3),
-    ],
-    key=["M_BUCKET", "N", "K"],
-)(_matmul)
+    ]
+
+
+# Tune once per power-of-two bucket of M, not once per exact token count. The two
+# backward products tune separately: their shapes differ from the forward's.
+_matmul_tuned = triton.autotune(configs=_matmul_configs(), key=["M_BUCKET", "N", "K"])(_matmul)
+_matmul_grad_a_tuned = triton.autotune(
+    configs=_matmul_configs(), key=["M_BUCKET", "N", "K_BUCKET"]
+)(_matmul_strided)
+_matmul_grad_b_tuned = triton.autotune(
+    configs=_matmul_configs(), key=["M_BUCKET", "N", "K_BUCKET"]
+)(_matmul_strided)
 
 FIXED_MATMUL_CONFIG = {"BM": 32, "BN": 64, "BK": 32, "GROUP_M": 1}
 
@@ -682,7 +772,42 @@ def launch_rmsnorm_backward(x, residual, weight, grad, dx, dweight, eps, wrap=No
     _kernel(_rmsnorm_bwd_weight, wrap)[(groups, blocks)](
         x, residual, grad, inv, partial, *strides, rows, groups, n, width_block, num_warps=4
     )
-    dweight.copy_(partial.sum(0))
+    finish_block = min(128, triton.next_power_of_2(n))
+    _kernel(_rmsnorm_bwd_weight_finish, wrap)[(triton.cdiv(n, finish_block),)](
+        partial, dweight, groups, n, finish_block, 32, num_warps=4
+    )
+
+
+def _launch_matmul_strided(tuned, x, y, out, m, n, kdim, x_strides, y_strides, autotune, wrap):
+    """out (m x n, contiguous) = x (m x kdim) @ y (kdim x n), each read through strides."""
+
+    def grid(meta):
+        return (triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]),)
+
+    args = (x, y, out, m, m_bucket(m), kdim, m_bucket(kdim), *x_strides, *y_strides, n)
+    if autotune:
+        return _kernel(tuned, wrap)[grid](*args)
+    return _kernel(_matmul_strided, wrap)[grid](
+        *args, **FIXED_MATMUL_CONFIG, num_warps=4, num_stages=2
+    )
+
+
+def launch_matmul_grad_a(grad, b, da, autotune, wrap=None):
+    """da (M x K) = grad (M x N, any strides) @ b.T, for contiguous b (K x N)."""
+    m, n = grad.shape
+    k = b.shape[0]
+    return _launch_matmul_strided(
+        _matmul_grad_a_tuned, grad, b, da, m, k, n, grad.stride(), b.t().stride(), autotune, wrap
+    )
+
+
+def launch_matmul_grad_b(grad, a, db, autotune, wrap=None):
+    """db (K x N) = a.T @ grad, for contiguous a (M x K) and grad (M x N, any strides)."""
+    m, k = a.shape
+    n = grad.shape[1]
+    return _launch_matmul_strided(
+        _matmul_grad_b_tuned, a, grad, db, k, n, m, a.t().stride(), grad.stride(), autotune, wrap
+    )
 
 
 def launch_matmul(a, b, out, autotune, wrap=None):

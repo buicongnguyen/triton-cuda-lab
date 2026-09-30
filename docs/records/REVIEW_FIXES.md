@@ -35,6 +35,9 @@ edits fail, missing required dependencies fail, and modified snapshots fail.
 
 ## Forward-only custom ops
 
+*Superseded on 2026-09-30: every operator now has an autograd formula, so this describes the
+state of the review it belongs to. See the [review record](REVIEW.md#improvements-2026-09-30).*
+
 The plain functions reject gradient-tracking inputs at the call. PyTorch's custom
 dispatcher can accept those inputs but raises on backward because these operators
 have no autograd formula. The setup guide now explains the distinction and shows
